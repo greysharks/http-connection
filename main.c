@@ -38,7 +38,25 @@ int main(int argc, char* argv[]) {
     if (strcmp(argv[1], "-s") == 0) {
       int conns[MAX_CONNECTIONS]; // for connections
       unsigned short int N = 0; // N is number of connections
-      char message[] = "HTTP/1.1 200 OK\nContent-Type: text/html\n\nHello from server!";
+      FILE* response; // server's http response
+      long int file_size;
+
+      // open file with server's http response in read mode
+      response = fopen("response.txt", "r");
+
+      // calculate response file size
+      if (fseek(response, 0, SEEK_END) != 0) {
+        close(sock);
+        perror("fseek()");
+        exit(EXIT_FAILURE);
+      }
+      file_size = ftell(response);
+      rewind(response);
+
+      // read response file
+      char message[file_size];
+      fread(message, 1, file_size, response);
+      fclose(response);
 
       // used only for accept(...) function
       unsigned int addr_len = sizeof (addr);
@@ -139,7 +157,25 @@ int main(int argc, char* argv[]) {
 
     // if program is used as client
     else if (strcmp(argv[1], "-c") == 0) {
-      char message[] = "GET / HTTP/1.1\nHost: 127.0.0.1\n\n";
+      FILE* request; // client's http request
+      long int file_size;
+
+      // open file with client's http request in read mode
+      request = fopen("request.txt", "r");
+
+      // calculate request file size
+      if (fseek(request, 0, SEEK_END) != 0) {
+        close(sock);
+        perror("fseek()");
+        exit(EXIT_FAILURE);
+      }
+      file_size = ftell(request);
+      rewind(request);
+
+      // read request file
+      char message[file_size];
+      fread(message, 1, file_size, request);
+      fclose(request);
 
       // connect to the server using its port number and IP
       if (connect(sock, (struct sockaddr*) &addr, sizeof (addr)) < 0) {
@@ -182,6 +218,10 @@ int main(int argc, char* argv[]) {
         perror("recv()");
         exit(EXIT_FAILURE);
       }
+
+      shutdown(sock, SHUT_RD);
+      close(sock);
+      exit(EXIT_SUCCESS);
     }
 
     // otherwise wrong arguments were passed to program
