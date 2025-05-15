@@ -105,16 +105,50 @@ int main(int argc, char* argv[]) {
           // read client's request and print it out in console
           bytes_received = recv(conns[i], buff, BUFF_SIZE, 0);
 
-          if (bytes_received > 0) {
+          // these variables will be used to check whether the received bytes from client
+          // contain starting parts or ending parts of http request
+          char* http_method;
+          char* http_version;
+          char* end_of_request;
+
+          while (bytes_received > 0) {
+            http_method = strstr(buff, "GET");
+            http_version = strstr(buff, "HTTP/1.1");
+            end_of_request = strstr(buff, "\n\n");
+
+            if (http_method != NULL && http_version != NULL) {
+              // send server's response to client
+              if (send(conns[i], message, sizeof (message), 0) < 0) {
+                close(conns[i]);
+                conns[i] = -1;
+                N -= 1;
+              }
+
+              // close the write option for connetion socket
+              if (shutdown(conns[i], SHUT_WR) < 0) {
+                close(conns[i]);
+                conns[i] = -1;
+                N -= 1;
+              }
+            }
+
+            // display request message in console
             for (unsigned short int i = 0; i < bytes_received; i++) {
               putchar(buff[i]);
             }
 
-            if (shutdown(conns[i], SHUT_RD) < 0) {
-              close(conns[i]);
-              conns[i] = -1;
-              N -= 1;
+            if (end_of_request != NULL) {
+              // close the read option for connection socket
+              if (shutdown(conns[i], SHUT_RD) < 0) {
+                close(conns[i]);
+                conns[i] = -1;
+                N -= 1;
+              }
+
+              break;
             }
+
+            bytes_received = recv(conns[i], buff, BUFF_SIZE, 0);
           }
 
           // check if any error occured while trying to receive request from client
@@ -124,29 +158,10 @@ int main(int argc, char* argv[]) {
             N -= 1;
           }
 
-          // if connection is valid
-          if (conns[i] != -1) {
-            // send server's response to client
-            if (send(conns[i], message, sizeof (message), 0) < 0) {
-              // if error occurred while sending server's response,
-              // then close all connection and display the error message
-              for (unsigned short int j = 0; j < MAX_CONNECTIONS; j++) {
-                if (conns[j] != -1) {
-                  close(conns[j]);
-                  conns[j] = -1;
-                }
-              }
-              close(sock);
-              perror("send()");
-              exit(EXIT_FAILURE);
-            }
-          }
-
-          // close current connection after sending server's message
+          // if current connection is valid, then close it after sending server's message
           // (because in this implementation server sends only one message
           // and doesn't receive any messages from the client)
           if (conns[i] != -1) {
-            shutdown(conns[i], SHUT_WR);
             close(conns[i]);
             conns[i] = -1;
             N -= 1;
@@ -197,7 +212,7 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
       }
 
-      puts("server's response\n");
+      puts("server's response:\n");
 
       // try to recevie the first portion of bytes of the server's response
       bytes_received = recv(sock, buff, BUFF_SIZE, 0);
