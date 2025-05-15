@@ -11,6 +11,10 @@ int main(int argc, char* argv[]) {
   const unsigned short int PORT = 80;
   const unsigned short int MAX_CONNECTIONS = 10;
 
+  const unsigned int BUFF_SIZE = 512; // max size of bytes of receive buffer
+  char buff[BUFF_SIZE]; // for receive buffer
+  unsigned short int bytes_received = 0;
+
   // structure that holds server's IP, port number and address family
   // (it can be used either to create a server with these values or
   // either to connect to the server with these values)
@@ -34,14 +38,14 @@ int main(int argc, char* argv[]) {
     if (strcmp(argv[1], "-s") == 0) {
       int conns[MAX_CONNECTIONS]; // for connections
       unsigned short int N = 0; // N is number of connections
-      char message[] = "HELLO FROM SERVER";
+      char message[] = "HTTP/1.1 200 OK\nContent-Type: text/html\n\nHello from server!";
 
       // used only for accept(...) function
       unsigned int addr_len = sizeof (addr);
 
-      // mark unexisting connections as NULL
+      // mark unexisting connections as -1
       for (unsigned short int i = 0; i < MAX_CONNECTIONS; i++) {
-        conns[i] = NULL;
+        conns[i] = -1;
       }
 
       // bind server socket with server's IP address, port number and address family
@@ -72,32 +76,70 @@ int main(int argc, char* argv[]) {
           }
         }
 
-        // go through all connections (skipping unexisting ones) to send server's message
+        // go through all connections (skipping unexisting ones)
         for (unsigned short int i = 0; i < MAX_CONNECTIONS; i++) {
-          if (conns[i] == NULL) {
+          if (conns[i] == -1) {
             continue;
           }
 
-          if (send(conns[i], message, sizeof (message), 0) < 0) {
-            perror("send()");
-            exit(EXIT_FAILURE);
+          puts("client's request:\n");
+
+          // read client's request and print it out in console
+          bytes_received = recv(conns[i], buff, BUFF_SIZE, 0);
+
+          if (bytes_received > 0) {
+            for (unsigned short int i = 0; i < bytes_received; i++) {
+              putchar(buff[i]);
+            }
+
+            if (shutdown(conns[i], SHUT_RD) < 0) {
+              close(conns[i]);
+              conns[i] = -1;
+              N -= 1;
+            }
+          }
+
+          // check if any error occured while trying to receive request from client
+          if (bytes_received < 0) {
+            close(conns[i]);
+            conns[i] = -1;
+            N -= 1;
+          }
+
+          // if connection is valid
+          if (conns[i] != -1) {
+            // send server's response to client
+            if (send(conns[i], message, sizeof (message), 0) < 0) {
+              // if error occurred while sending server's response,
+              // then close all connection and display the error message
+              for (unsigned short int j = 0; j < MAX_CONNECTIONS; j++) {
+                if (conns[j] != -1) {
+                  close(conns[j]);
+                  conns[j] = -1;
+                }
+              }
+              close(sock);
+              perror("send()");
+              exit(EXIT_FAILURE);
+            }
           }
 
           // close current connection after sending server's message
           // (because in this implementation server sends only one message
           // and doesn't receive any messages from the client)
-          close(conns[i]);
-          conns[i] = NULL;
-          N -= 1;
+          if (conns[i] != -1) {
+            shutdown(conns[i], SHUT_WR);
+            close(conns[i]);
+            conns[i] = -1;
+            N -= 1;
+          }
         }
       }
     }
 
     // if program is used as client
     else if (strcmp(argv[1], "-c") == 0) {
-      const unsigned int BUFF_SIZE = 512; // max size of bytes of receive buffer
-      char buff[BUFF_SIZE]; // for receive buffer
-      unsigned short int bytes_received = 0;
+      char message[] = "GET / HTTP/1.1\nHost: 127.0.0.1\n\n";
 
       // connect to the server using its port number and IP
       if (connect(sock, (struct sockaddr*) &addr, sizeof (addr)) < 0) {
@@ -106,7 +148,22 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
       }
 
-      // try to recevie the first portion of bytes from the server
+      // send client's request to server
+      if (send(sock, message, sizeof (message), 0) < 0) {
+        close(sock);
+        perror("send()");
+        exit(EXIT_FAILURE);
+      }
+
+      if (shutdown(sock, SHUT_WR) < 0) {
+        close(sock);
+        perror("send()");
+        exit(EXIT_FAILURE);
+      }
+
+      puts("server's response\n");
+
+      // try to recevie the first portion of bytes of the server's response
       bytes_received = recv(sock, buff, BUFF_SIZE, 0);
 
       // keep printing all bytes of data that client recevies from the server
