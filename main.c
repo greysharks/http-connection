@@ -6,14 +6,46 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
+char* ReadFile(char* file_name, long int* file_size) {
+  FILE* file;
+
+  // open file
+  file = fopen(file_name, "r");
+
+  // get file size
+  fseek(file, 0, SEEK_END);
+  file_size = ftell(file);
+  rewind(file);
+
+  // read file content
+  char* file_content = (char*) malloc((size_t) (file_size + 1));
+
+  if (fread(file_content, 1, file_size, file) != file_size) {
+    return NULL;
+  }
+
+  file_content[file_size] = '\0';
+
+  // close file
+  fclose(file);
+
+  return file_content;
+}
+
+char* GetError404(char* requested_path, unsigned int requested_path_length) {
+  char* http_message = "HTTP/1.1 404 Not Found\n";
+  unsigned int http_message_length = strlen(http_message);
+  char* error = (char*) malloc(http_message_length + requested_path_length + 1);
+
+}
+
 int main(int argc, char* argv[]) {
   const unsigned int IP = (127 << 24) + 1; // for ip 127.0.0.1
   const unsigned short int PORT = 80;
-  const unsigned short int MAX_CONNECTIONS = 10;
 
   const unsigned int BUFF_SIZE = 512; // max size of bytes of receive buffer
   char buff[BUFF_SIZE]; // for receive buffer
-  unsigned short int bytes_received = 0;
+  ssize_t bytes_received = 0;
 
   // structure that holds server's IP, port number and address family
   // (it can be used either to create a server with these values or
@@ -36,27 +68,11 @@ int main(int argc, char* argv[]) {
   if (argc > 1) {
     // if program is used as server
     if (strcmp(argv[1], "-s") == 0) {
+      const unsigned short int MAX_CONNECTIONS = 10;
       int conns[MAX_CONNECTIONS]; // for connections
       unsigned short int N = 0; // N is number of connections
-      FILE* response; // server's http response
-      long int file_size;
-
-      // open file with server's http response in read mode
-      response = fopen("response.txt", "r");
-
-      // calculate response file size
-      if (fseek(response, 0, SEEK_END) != 0) {
-        close(sock);
-        perror("fseek()");
-        exit(EXIT_FAILURE);
-      }
-      file_size = ftell(response);
-      rewind(response);
-
-      // read response file
-      char message[file_size];
-      fread(message, 1, file_size, response);
-      fclose(response);
+      long int response_fsize; // fsize is file size
+      long int paths_fsize;
 
       // used only for accept(...) function
       unsigned int addr_len = sizeof (addr);
@@ -64,6 +80,24 @@ int main(int argc, char* argv[]) {
       // mark unexisting connections as -1
       for (unsigned short int i = 0; i < MAX_CONNECTIONS; i++) {
         conns[i] = -1;
+      }
+
+      // read response file
+      char* message = ReadFile("response.txt", response_fsize);
+
+      if (message == NULL) {
+        close(sock);
+        perror("ReadFile()");
+        exit(EXIT_FAILURE);
+      }
+
+      // read a file containing all url paths available in this server (in form of list)
+      char* url_paths = ReadFile("paths.txt", paths_fsize);
+
+      if (ulr_paths == NULL) {
+        close(sock);
+        perror("ReadFile()");
+        exit(EXIT_FAILURE);
       }
 
       // bind server socket with server's IP address, port number and address family
@@ -107,21 +141,96 @@ int main(int argc, char* argv[]) {
 
           // these variables will be used to check whether the received bytes from client
           // contain starting parts or ending parts of http request
-          char* http_method;
-          char* http_version;
-          char* end_of_request;
+          char* start_of_request = NULL;
+          char* end_of_request = NULL;
 
           while (bytes_received > 0) {
-            http_method = strstr(buff, "GET");
-            http_version = strstr(buff, "HTTP/1.1");
+            start_of_request = strstr(buff, "HTTP/1.1");
             end_of_request = strstr(buff, "\n\n");
 
-            if (http_method != NULL && http_version != NULL) {
-              // send server's response to client
-              if (send(conns[i], message, sizeof (message), 0) < 0) {
+            if (start_of_request != NULL) {
+              int end_of_first_line = 0;
+
+              // locate the index of the first end line character (aka the end
+              // of first line of http message) in the string that holds the
+              // first part of http request (in other words, find where the
+              // first line ends in that string)
+              while (buff[end_of_first_line] != '\n') {
+                end_of_first_line += 1;
+              }
+
+              int space_count = 1;
+
+              int spaces[2];
+
+              for (int j = 0; j < end_of_first_line; j++) {
+                if (buff[j] == ' ') {
+                  // [space_count - 1] because space_count equals 1 initially
+                  // and not 0 (but 0 is the index of first element in arrays
+                  // so it should be used to access the first element of spaces
+                  // array)
+                  spaces[space_count - 1] = j;
+                  space_count += 1;
+                }
+              }
+
+              // the number of spaces in the frist line of the http request
+              // should be exactly 2: the first space after name of the http
+              // method (GET, POST, PUT, etc) and the second space after the
+              // url path to the requested resource. after that goes the version
+              // of http protocol and the end of line character
+              if (space_count != 2) {
                 close(conns[i]);
                 conns[i] = -1;
                 N -= 1;
+                break;
+              }
+
+              // (spaces[1] - spaces[0] - 1) is because the string is located
+              // between those indexes and so it excludes them (the first
+              // character of the string is located at (spaces[0] + 1) and the
+              // last character of the string is located at (spaces[1] - 1))
+              int url_path_length = spaces[1] - spaces[0] - 1;
+              char url_path[url_path_length + 1];
+              url_path[url_path_length] = '\0';
+
+              // (spaces[0] + 1) to exclude the first space character from
+              // the url path string (in other words, start indexing the string
+              // right after the index of first space of that string)
+              for (int j = spaces[0] + 1; j < url_path_length; j++) {
+                url_path[j] = buff[j];
+              }
+
+              // check if the requested path to resource on server exists in the list of avilable server's paths
+              if (strstr(url_paths, url_path) == NULL) {
+                char* error = 
+                close(conns[i]);
+                conns[i] = -1;
+                N -= 1;
+                break;
+              }
+
+              int requested_method_length = spaces[0];
+              char* requested_method[requested_method_length + 1];
+              requested_method[requested_method_length] = '\0';
+
+              for (int j = 0; j < requested_method_length; j++) {
+                requested_method[j] = buff[j];
+              }
+
+              if (strstr(url_paths, requested_method) == NULL) {
+                close(conns[i]);
+                conns[i] = -1;
+                N -= 1;
+                break;
+              }
+
+              // send server's response to client
+              if (send(conns[i], message, (size_t) (response_fsize + 1), 0) < 0) {
+                close(conns[i]);
+                conns[i] = -1;
+                N -= 1;
+                break;
               }
 
               // close the write option for connetion socket
@@ -129,11 +238,12 @@ int main(int argc, char* argv[]) {
                 close(conns[i]);
                 conns[i] = -1;
                 N -= 1;
+                break;
               }
             }
 
             // display request message in console
-            for (unsigned short int i = 0; i < bytes_received; i++) {
+            for (ssize_t j = 0; j < bytes_received; j++) {
               putchar(buff[i]);
             }
 
@@ -143,8 +253,12 @@ int main(int argc, char* argv[]) {
                 close(conns[i]);
                 conns[i] = -1;
                 N -= 1;
+                break;
               }
 
+              close(conns[i];
+              conns[i] = -1;
+              N -= 1;
               break;
             }
 
@@ -156,6 +270,7 @@ int main(int argc, char* argv[]) {
             close(conns[i]);
             conns[i] = -1;
             N -= 1;
+            continue;
           }
 
           // if current connection is valid, then close it after sending server's message
@@ -168,29 +283,23 @@ int main(int argc, char* argv[]) {
           }
         }
       }
+
+      free(message);
+      free(url_paths);
     }
 
     // if program is used as client
     else if (strcmp(argv[1], "-c") == 0) {
-      FILE* request; // client's http request
-      long int file_size;
-
-      // open file with client's http request in read mode
-      request = fopen("request.txt", "r");
-
-      // calculate request file size
-      if (fseek(request, 0, SEEK_END) != 0) {
-        close(sock);
-        perror("fseek()");
-        exit(EXIT_FAILURE);
-      }
-      file_size = ftell(request);
-      rewind(request);
+      long int request_fsize;
 
       // read request file
-      char message[file_size];
-      fread(message, 1, file_size, request);
-      fclose(request);
+      char* message = ReadFile("request.txt", request_fsize);
+
+      if (message == NULL) {
+        close(sock);
+        perror("ReadFile()");
+        exit(EXIT_FAILURE);
+      }
 
       // connect to the server using its port number and IP
       if (connect(sock, (struct sockaddr*) &addr, sizeof (addr)) < 0) {
@@ -200,7 +309,7 @@ int main(int argc, char* argv[]) {
       }
 
       // send client's request to server
-      if (send(sock, message, sizeof (message), 0) < 0) {
+      if (send(sock, message, (size_t) (request_fsize + 1), 0) < 0) {
         close(sock);
         perror("send()");
         exit(EXIT_FAILURE);
@@ -234,6 +343,7 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
       }
 
+      free(message);
       shutdown(sock, SHUT_RD);
       close(sock);
       exit(EXIT_SUCCESS);
