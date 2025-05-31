@@ -32,6 +32,72 @@ char* ReadFile(char* file_name, long int* file_size) {
   return file_content;
 }
 
+char** GetAvialableResources(char* server_paths, long int server_paths_size) {
+  char* http_method_name = "GET ";
+  int http_method_name_length = strlen(http_method_name);
+
+  int j = 0;
+  int count = 0;
+
+  // count number of GET methods used in server_paths
+  for (long int i = 0; i < server_paths_size; i++) {
+    // check if http_method_name is in the server_paths
+    if (server_paths[i] == http_method_name[j]) {
+      j += 1;
+    }
+
+    // that means that every characters in http_method_name was in the server_paths
+    if (j == http_method_name_length) {
+      count += 1;
+
+      // reset j
+      j = 0;
+    }
+  }
+
+  char** available_resources = (char**) malloc((sizeof (char*)) * ((size_t) count));
+
+  count = 0;
+
+  // find every place where GET method is used in server_paths to get the url path string
+  for (long int i = 0; i < server_paths_size; i++) {
+    // check if http_method_name is in the server_paths
+    if (server_paths[i] == http_method_name[j]) {
+      j += 1;
+    }
+
+    // that means that every characters in http_method_name was in the server_paths
+    if (j == http_method_name_length) {
+      long int length = 0;
+
+      // get the length of url path
+      while (server_paths[i + length] != '\n') {
+        length += 1;
+      }
+
+      char* url_path[length + 1];
+      url_path[length] = '\0';
+
+      long int k = 0;
+
+      while (server_paths[i] != '\n') {
+        url_path[k] = server_paths[i];
+
+        k += 1;
+        i += 1;
+      }
+
+      available_resources[count] = url_path;
+      count += 1;
+
+      // reset j
+      j = 0;
+    }
+  }
+
+  return available_resources;
+}
+
 char* GetError404(char* requested_path, unsigned int requested_path_length) {
   char* http_message = "HTTP/1.1 404 Not Found\n";
   unsigned int http_message_length = strlen(http_message);
@@ -92,13 +158,15 @@ int main(int argc, char* argv[]) {
       }
 
       // read a file containing all url paths available in this server (in form of list)
-      char* url_paths = ReadFile("paths.txt", paths_fsize);
+      char* paths = ReadFile("paths.txt", paths_fsize);
 
-      if (ulr_paths == NULL) {
+      if (paths == NULL) {
         close(sock);
         perror("ReadFile()");
         exit(EXIT_FAILURE);
       }
+
+      char** avaliable_resources = GetAvailableResources(paths, paths_fsize);
 
       // bind server socket with server's IP address, port number and address family
       if (bind(sock, (struct sockaddr*) &addr, sizeof (addr)) < 0) {
@@ -202,8 +270,7 @@ int main(int argc, char* argv[]) {
               }
 
               // check if the requested path to resource on server exists in the list of avilable server's paths
-              if (strstr(url_paths, url_path) == NULL) {
-                char* error = 
+              if (strstr(paths, url_path) == NULL) {
                 close(conns[i]);
                 conns[i] = -1;
                 N -= 1;
@@ -218,7 +285,7 @@ int main(int argc, char* argv[]) {
                 requested_method[j] = buff[j];
               }
 
-              if (strstr(url_paths, requested_method) == NULL) {
+              if (strstr(paths, requested_method) == NULL) {
                 close(conns[i]);
                 conns[i] = -1;
                 N -= 1;
@@ -285,7 +352,8 @@ int main(int argc, char* argv[]) {
       }
 
       free(message);
-      free(url_paths);
+      free(paths);
+      free(available_resources);
     }
 
     // if program is used as client

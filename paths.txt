@@ -1,1 +1,2 @@
-GET / index.html
+GET /
+GET /index.html
