@@ -32,70 +32,116 @@ char* ReadFile(char* file_name, long int* file_size) {
   return file_content;
 }
 
-char** GetAvialableResources(char* server_paths, long int server_paths_size) {
-  char* http_method_name = "GET ";
-  int http_method_name_length = strlen(http_method_name);
+char** SearchAfter(char* substring, char* string, char* separator) {
+  char** results = NULL;
 
-  int j = 0;
+  unsigned long int string_length = strlen(string);
+  unsigned long int substring_length = strlen(substring);
+  unsigned long int separator_length = strlen(separator);
+
   int count = 0;
 
-  // count number of GET methods used in server_paths
-  for (long int i = 0; i < server_paths_size; i++) {
-    // check if http_method_name is in the server_paths
-    if (server_paths[i] == http_method_name[j]) {
-      j += 1;
-    }
+  // count number of substrings placed in the string
+  for (unsigned long int i = 0; i < string_length; i++) {
+    if (string[i] == substring[0]) {
+      unsigned int j = 0;
 
-    // that means that every characters in http_method_name was in the server_paths
-    if (j == http_method_name_length) {
-      count += 1;
+      // check if the substring is in the string
+      while (string[i + j] == substring[j]) {
+        j += 1;
 
-      // reset j
-      j = 0;
+        // as at some moment substring[j] will be '\0' (considering that substring_length < string_length)
+        // and it will signify that the content of substring was found in the string and the loop would be finished,
+        // unless string[i + j] would be the end of the string as well and so it would also be '\0',
+        // so the next iteration of the loop would happen and the program would try to access the values
+        // outside the given arrays (resulting in error or unpredictable behaviour)
+        if (string[i + j] == '\0') {
+          break;
+        }
+      }
+
+      // that means that every characters of substring was in the string (in same sequence)
+      if (j == substring_length) {
+        count += 1;
+      }
     }
   }
 
-  char** available_resources = (char**) malloc((sizeof (char*)) * ((size_t) count));
+  if (count == 0) {
+    return results;
+  }
+
+  results = (char**) malloc((sizeof (char*)) * ((size_t) count));
 
   count = 0;
 
-  // find every place where GET method is used in server_paths to get the url path string
-  for (long int i = 0; i < server_paths_size; i++) {
-    // check if http_method_name is in the server_paths
-    if (server_paths[i] == http_method_name[j]) {
-      j += 1;
-    }
+  // get all substrings after given substring but before the given separator
+  for (unsigned long int i = 0; i < string_length; i++) {
+    // find again each place where substring is in the string
+    if (string[i] == substring[0]) {
+      unsigned int j = 0;
 
-    // that means that every characters in http_method_name was in the server_paths
-    if (j == http_method_name_length) {
-      long int length = 0;
+      while (string[i + j] == substring[j] {
+        j += 1;
 
-      // get the length of url path
-      while (server_paths[i + length] != '\n') {
-        length += 1;
+        // explanations are above in this function
+        if (string[i + j] == '\0') {
+          break;
+        }
       }
 
-      char* url_path[length + 1];
-      url_path[length] = '\0';
+      // and if every characters of substring was in the string (in same sequence)
+      if (j == substring_length) {
+        // move to the part of the string that starts right after the given substring
+        i += j;
 
-      long int k = 0;
+        unsigned long int length = 0;
 
-      while (server_paths[i] != '\n') {
-        url_path[k] = server_paths[i];
+        j = 0;
 
-        k += 1;
-        i += 1;
+        // get the length of searched substring
+        while (string[i + length] != '\0') {
+          if (string[i + length] == separator[0]) {
+            unsigned int k = 0;
+
+            while (string[i + length + k] == separator[k]) {
+              k += 1;
+
+              // similar to cases before (explanations in function above)
+              if (string[i + length + k] == '\0') {
+                break;
+              }
+            }
+
+            // that means that the algorithm reached the separator for the string search
+            if (k == separator_length) {
+              break;
+            }
+          }
+
+          length += 1;
+        }
+
+        char* result_found[length + 1];
+        result_found[length] = '\0';
+
+        j = 0;
+
+        while (j != length) {
+          result_found[j] = string[i];
+
+          j += 1;
+          i += 1;
+        }
+
+        results[count] = result_found;
+
+        count += 1;
       }
-
-      available_resources[count] = url_path;
-      count += 1;
-
-      // reset j
-      j = 0;
     }
   }
 
-  return available_resources;
+  return results;
 }
 
 char* GetError404(char* requested_path, unsigned int requested_path_length) {
