@@ -14,17 +14,17 @@ char* ReadFile(char* file_name, long int* file_size) {
 
   // get file size
   fseek(file, 0, SEEK_END);
-  file_size = ftell(file);
+  *file_size = ftell(file);
   rewind(file);
 
   // read file content
-  char* file_content = (char*) malloc((size_t) (file_size + 1));
+  char* file_content = (char*) malloc((size_t) (*file_size + 1));
 
-  if (fread(file_content, 1, file_size, file) != file_size) {
+  if (fread(file_content, 1, *file_size, file) != *file_size) {
     return NULL;
   }
 
-  file_content[file_size] = '\0';
+  file_content[*file_size] = '\0';
 
   // close file
   fclose(file);
@@ -62,6 +62,9 @@ char** SearchAfter(char* substring, char* string, char* separator) {
 
       // that means that every characters of substring was in the string (in same sequence)
       if (j == substring_length) {
+        // (j - 1) moves index to the position of the final character of the string, so when the index gets incremented (i++)
+        // in the end of for loop iteration -- the index gets positioned right after the the end of substring
+        i += j - 1;
         count += 1;
       }
     }
@@ -81,7 +84,7 @@ char** SearchAfter(char* substring, char* string, char* separator) {
     if (string[i] == substring[0]) {
       unsigned int j = 0;
 
-      while (string[i + j] == substring[j] {
+      while (string[i + j] == substring[j]) {
         j += 1;
 
         // explanations are above in this function
@@ -135,6 +138,11 @@ char** SearchAfter(char* substring, char* string, char* separator) {
         }
 
         results[count] = result_found;
+
+        // this expression lets index skip the found result of search as well as skip the separator's substring
+        // to continue the search for the next occurrence of the given substring in the string (decrement for the
+        // same reason as in the loop for counting number of substrings in the string)
+        i += (length - 1) + (separator_length - 1);
 
         count += 1;
       }
@@ -195,7 +203,7 @@ int main(int argc, char* argv[]) {
       }
 
       // read response file
-      char* message = ReadFile("response.txt", response_fsize);
+      char* message = ReadFile("response.txt", &response_fsize);
 
       if (message == NULL) {
         close(sock);
@@ -204,7 +212,7 @@ int main(int argc, char* argv[]) {
       }
 
       // read a file containing all url paths available in this server (in form of list)
-      char* paths = ReadFile("paths.txt", paths_fsize);
+      char* paths = ReadFile("paths.txt", &paths_fsize);
 
       if (paths == NULL) {
         close(sock);
@@ -212,7 +220,7 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
       }
 
-      char** avaliable_resources = GetAvailableResources(paths, paths_fsize);
+      char** available_resources = SearchAfter("GET ", paths, "\n");
 
       // bind server socket with server's IP address, port number and address family
       if (bind(sock, (struct sockaddr*) &addr, sizeof (addr)) < 0) {
@@ -369,7 +377,7 @@ int main(int argc, char* argv[]) {
                 break;
               }
 
-              close(conns[i];
+              close(conns[i]);
               conns[i] = -1;
               N -= 1;
               break;
@@ -407,7 +415,7 @@ int main(int argc, char* argv[]) {
       long int request_fsize;
 
       // read request file
-      char* message = ReadFile("request.txt", request_fsize);
+      char* message = ReadFile("request.txt", &request_fsize);
 
       if (message == NULL) {
         close(sock);
