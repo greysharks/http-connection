@@ -32,7 +32,7 @@ char* ReadFile(char* file_name, long int* file_size) {
   return file_content;
 }
 
-char** SearchAfter(char* substring, char* string, char* separator) {
+char** SearchAfter(char* substring, char* string, char* separator, unsigned int* number_of_results) {
   char** results = NULL;
 
   unsigned long int string_length = strlen(string);
@@ -70,7 +70,9 @@ char** SearchAfter(char* substring, char* string, char* separator) {
     }
   }
 
-  if (count == 0) {
+  *number_of_results = count;
+
+  if (number_of_results == 0) {
     return results;
   }
 
@@ -125,7 +127,7 @@ char** SearchAfter(char* substring, char* string, char* separator) {
           length += 1;
         }
 
-        char* result_found[length + 1];
+        char* result_found = (char*) malloc(sizeof(char) * ((size_t)(length + 1)));
         result_found[length] = '\0';
 
         j = 0;
@@ -152,7 +154,7 @@ char** SearchAfter(char* substring, char* string, char* separator) {
   return results;
 }
 
-char* GetError404(char* requested_path, unsigned int requested_path_length) {
+void GetError404(char* requested_path, unsigned int requested_path_length) {
   char* http_message = "HTTP/1.1 404 Not Found\n";
   unsigned int http_message_length = strlen(http_message);
   char* error = (char*) malloc(http_message_length + requested_path_length + 1);
@@ -192,10 +194,20 @@ int main(int argc, char* argv[]) {
       int conns[MAX_CONNECTIONS]; // for connections
       unsigned short int N = 0; // N is number of connections
       long int response_fsize; // fsize is file size
-      long int paths_fsize;
+      long int server_paths_fsize;
 
       // used only for accept(...) function
       unsigned int addr_len = sizeof (addr);
+
+      char** available_resources;
+      char* message;
+      char* server_paths;
+      char* url_path;
+      char* requested_method;
+
+      unsigned int number_of_resources;
+      int url_path_length;
+      int requested_method_length;
 
       // mark unexisting connections as -1
       for (unsigned short int i = 0; i < MAX_CONNECTIONS; i++) {
@@ -203,7 +215,7 @@ int main(int argc, char* argv[]) {
       }
 
       // read response file
-      char* message = ReadFile("response.txt", &response_fsize);
+      message = ReadFile("response.txt", &response_fsize);
 
       if (message == NULL) {
         close(sock);
@@ -212,15 +224,16 @@ int main(int argc, char* argv[]) {
       }
 
       // read a file containing all url paths available in this server (in form of list)
-      char* paths = ReadFile("paths.txt", &paths_fsize);
+      server_paths = ReadFile("paths.txt", &server_paths_fsize);
 
-      if (paths == NULL) {
+      if (server_paths == NULL) {
         close(sock);
         perror("ReadFile()");
         exit(EXIT_FAILURE);
       }
 
-      char** available_resources = SearchAfter("GET ", paths, "\n");
+      number_of_resources = 0;
+      available_resources = SearchAfter("GET ", server_paths, "\n", &number_of_resources);
 
       // bind server socket with server's IP address, port number and address family
       if (bind(sock, (struct sockaddr*) &addr, sizeof (addr)) < 0) {
@@ -312,8 +325,8 @@ int main(int argc, char* argv[]) {
               // between those indexes and so it excludes them (the first
               // character of the string is located at (spaces[0] + 1) and the
               // last character of the string is located at (spaces[1] - 1))
-              int url_path_length = spaces[1] - spaces[0] - 1;
-              char url_path[url_path_length + 1];
+              url_path_length = spaces[1] - spaces[0] - 1;
+              url_path = (char*) malloc(sizeof(char) * ((size_t) (url_path_length + 1)));
               url_path[url_path_length] = '\0';
 
               // (spaces[0] + 1) to exclude the first space character from
@@ -324,22 +337,22 @@ int main(int argc, char* argv[]) {
               }
 
               // check if the requested path to resource on server exists in the list of avilable server's paths
-              if (strstr(paths, url_path) == NULL) {
+              if (strstr(server_paths, url_path) == NULL) {
                 close(conns[i]);
                 conns[i] = -1;
                 N -= 1;
                 break;
               }
 
-              int requested_method_length = spaces[0];
-              char* requested_method[requested_method_length + 1];
+              requested_method_length = spaces[0];
+              requested_method = (char*) malloc(sizeof(char) * ((size_t) (requested_method_length + 1)));
               requested_method[requested_method_length] = '\0';
 
               for (int j = 0; j < requested_method_length; j++) {
                 requested_method[j] = buff[j];
               }
 
-              if (strstr(paths, requested_method) == NULL) {
+              if (strstr(server_paths, requested_method) == NULL) {
                 close(conns[i]);
                 conns[i] = -1;
                 N -= 1;
@@ -361,6 +374,9 @@ int main(int argc, char* argv[]) {
                 N -= 1;
                 break;
               }
+
+              free(url_path);
+              free(requested_method);
             }
 
             // display request message in console
@@ -405,9 +421,13 @@ int main(int argc, char* argv[]) {
         }
       }
 
-      free(message);
-      free(paths);
+      for (unsigned int i = 0; i < number_of_resources; i++) {
+        free(available_resources[i]);
+      }
+
       free(available_resources);
+      free(message);
+      free(server_paths);
     }
 
     // if program is used as client
