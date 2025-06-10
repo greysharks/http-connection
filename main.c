@@ -9,10 +9,12 @@
 struct server_file {
   char* file_content;
   char* url_path;
+  long int size_of_file;
 };
 
 char* ReadFile(char* file_name, long int* file_size);
 char** SearchAfter(char* substring, char* string, char* separator, unsigned int* number_of_results);
+struct server_file* OpenServerFiles(char* server_paths, unsigned int* number_of_server_paths);
 
 int main(int argc, char* argv[]) {
   const unsigned int IP = (127 << 24) + 1; // for ip 127.0.0.1
@@ -52,7 +54,6 @@ int main(int argc, char* argv[]) {
       // used only for accept(...) function
       unsigned int addr_len = sizeof (addr);
 
-      char** available_resources;
       char* message;
       char* server_paths;
       char* url_path;
@@ -88,21 +89,14 @@ int main(int argc, char* argv[]) {
       }
 
       number_of_resources = 0;
-      available_resources = SearchAfter("GET ", server_paths, "\n", &number_of_resources);
 
-      server_files = (struct server_file*) malloc(sizeof (struct server_file) * number_of_resources);
+      server_files = OpenServerFiles(server_paths, &number_of_resources);
 
       if (server_files == NULL) {
         close(sock);
-        perror("malloc()");
+        perror("OpenServerFiles()");
         exit(EXIT_FAILURE);
       }
-
-      for (unsigned int i = 0; i < number_of_resources; i++) {
-        server_files[i].url_path = available_resources[i];
-      }
-
-      
 
       // bind server socket with server's IP address, port number and address family
       if (bind(sock, (struct sockaddr*) &addr, sizeof (addr)) < 0) {
@@ -291,10 +285,12 @@ int main(int argc, char* argv[]) {
       }
 
       for (unsigned int i = 0; i < number_of_resources; i++) {
-        free(available_resources[i]);
+        free(server_files[i].file_content);
+        free(server_files[i].url_path);
       }
 
-      free(available_resources);
+      free(server_files);
+
       free(message);
       free(server_paths);
     }
@@ -446,7 +442,7 @@ char** SearchAfter(char* substring, char* string, char* separator, unsigned int*
   *number_of_results = count;
 
   if (number_of_results == 0) {
-    return results;
+    return NULL;
   }
 
   results = (char**) malloc((sizeof (char*)) * ((size_t) count));
@@ -525,4 +521,207 @@ char** SearchAfter(char* substring, char* string, char* separator, unsigned int*
   }
 
   return results;
+}
+
+
+struct server_file* OpenServerFiles(char* server_paths, unsigned int* number_of_server_paths) {
+  char** available_resources;
+  struct server_file* server_files;
+  char* file_path;
+  unsigned int file_path_length;
+
+  char* index_file_name = "index.html";
+
+  // get the list of server's URL paths, that are available for GET requests
+  available_resources = SearchAfter("GET ", server_paths, "\n", number_of_server_paths);
+
+  if (available_resources == NULL) {
+    return NULL;
+  }
+
+  // there would be the same number of objects of server_file structure as the number of
+  // server's URL paths available for GET requests, even though two URL paths may point
+  // to the same file (if the URL path ends with '/', that means that this URL points
+  // to index.html file), so the actual number of server's files available for GET
+  // requests may be LESS or equal to the number of available server's URL paths
+  server_files = (struct server_file*) malloc(sizeof (struct server_file) * (*number_of_server_paths));
+
+  // if memory was not allocated for structure objetcs
+  if (server_files == NULL) {
+    for (unsigned int i = 0; i < *number_of_server_paths; i++) {
+      // then free the memory allocated for list of server's URL paths
+      free(available_resources[i]);
+    }
+
+    free(available_resources);
+
+    return NULL;
+  }
+
+  for (unsigned int i = 0; i < *number_of_server_paths; i++) {
+    // assign this to NULL initially to be aware that this member of structure
+    // was not assigned any value yet
+    server_files[i].file_content = NULL;
+    server_files[i].url_path = available_resources[i];
+  }
+
+  // from this moment the list of available server's URL paths is no longer needed
+  free(available_resources);
+
+  for (unsigned int i = 0; i < *number_of_server_paths; i++) {
+    if (server_files[i].file_content != NULL) {
+      // skip the URL paths that already have been linked with their file
+      continue;
+    }
+
+    unsigned int url_path_length = strlen(server_files[i].url_path);
+
+    // check if current URL path ends with forward slash
+    if (server_files[i].url_path[url_path_length - 1] == '/') {
+      unsigned int index_url_path_length;
+      char* index_url_path;
+
+      // URL path for index file will contatin current URL path plus index.html
+      index_url_path_length = url_path_length + strlen(index_file_name);
+      index_url_path = (char*) malloc((sizeof (char)) * (index_url_path_length + 1));
+
+      index_url_path[index_url_path_length] = '\0';
+
+      // file path will point to the index file in the current directory
+      // (e.g. for the "index.html" file in current directory it is "./index.html")
+      file_path_length = index_url_path_length + 1;
+      file_path = (char*) malloc((sizeof (char)) * (file_path_length + 1));
+
+      file_path[0] = '.';
+      file_path[file_path_length] = '\0';
+
+      unsigned int j = 0;
+
+      // adding current URL path to the URL and file path of index file (index.html)
+      for (; j < url_path_length; j++) {
+        index_url_path[j] = server_files[i].url_path[j];
+
+        // looping over file path sould be (j + 1), because the first character of
+        // file path is always a dot ('.'), but URL paths always start with forward slash ('/')
+        file_path[j + 1] = server_files[i].url_path[j];
+      }
+
+      // adding "index.html" to the URL and file path of index file (index.html)
+      for (unsigned int k = 0; k < strlen(index_file_name); k++) {
+        index_url_path[j + k] = index_file_name[k];
+        file_path[j + 1 + k] = index_file_name[k];
+      }
+
+      // reading file content by given file path
+      server_files[i].file_content = ReadFile(file_path, &server_files[i].size_of_file);
+
+      if (server_files[i].file_content == NULL) {
+        free(file_path);
+        return NULL;
+      }
+
+      // now go through the rest of available URL paths to look for the URL path
+      // of the index file in the same server directory
+      j = i;
+
+      for (; j < *number_of_server_paths; j++) {
+        if (strstr(server_files[j].url_path, index_url_path) != NULL) {
+          // if current URL path is the same as the URL path for index file
+          // in the same server's directory, then point this URL path to
+          // the same index file
+          server_files[j].file_content = server_files[i].file_content;
+          // and then exit the loop, because there could be only one
+          // index file (index.html) for server's directory
+          break;
+        }
+      }
+    }
+
+    // check if current URL path contains index.html
+    else if (strstr(server_files[i].url_path, index_file_name) != NULL) {
+      unsigned int directory_url_path_length;
+      char* directory_url_path;
+
+      // URL path for the same directory where index file is located
+      directory_url_path_length = url_path_length - strlen(index_file_name);
+      directory_url_path = (char*) malloc((sizeof (char)) * (directory_url_path_length + 1));
+
+      directory_url_path[directory_url_path_length] = '\0';
+
+      // file path will point to the index file in the current directory
+      // (e.g. for the "index.html" file in current directory it is "./index.html")
+      file_path_length = url_path_length + 1;
+      file_path = (char*) malloc((sizeof (char)) * (file_path_length + 1));
+
+      file_path[0] = '.';
+      file_path[file_path_length] = '\0';
+
+      unsigned int j = 0;
+
+      // adding current URL path to the URL and file path of index file (index.html)
+      for (; j < directory_url_path_length; j++) {
+        directory_url_path[j] = server_files[i].url_path[j];
+
+        // looping over file path sould be (j + 1), because the first character of
+        // file path is always a dot ('.'), but URL paths always start with forward slash ('/')
+        file_path[j + 1] = server_files[i].url_path[j];
+      }
+
+      // adding "index.html" to the file path of index file (index.html)
+      // without adding it to the URL path of current directory
+      for (; j < url_path_length; j++) {
+        file_path[j + 1] = server_files[i].url_path[j];
+      }
+
+      // reading file content by given file path
+      server_files[i].file_content = ReadFile(file_path, &server_files[i].size_of_file);
+
+      if (server_files[i].file_content == NULL) {
+        free(file_path);
+        return NULL;
+      }
+
+      // now go through the rest of available URL paths to look for the URL path
+      // of the same server directory as the URL path for current index file
+      j = i;
+
+      for (; j < *number_of_server_paths; j++) {
+        if (strstr(server_files[j].url_path, directory_url_path) != NULL) {
+          // point this URL path to the same index file
+          server_files[j].file_content = server_files[i].file_content;
+          // and then exit the loop, because there could be only one
+          // index file (index.html) for server's directory
+          break;
+        }
+      }
+    }
+
+    else {
+      // file path will point to the index file in the current directory
+      // (e.g. for the "index.html" file in current directory it is "./index.html")
+      file_path_length = url_path_length + 1;
+      file_path = (char*) malloc((sizeof (char)) * (file_path_length + 1));
+
+      file_path[0] = '.';
+      file_path[file_path_length] = '\0';
+
+      // looping over file path sould be (j + 1), because the first character of
+      // file path is always a dot ('.')
+      for (unsigned int j = 0; j < url_path_length; j++) {
+        file_path[j + 1] = server_files[i].url_path[j];
+      }
+
+      // reading file content by given file path
+      server_files[i].file_content = ReadFile(file_path, &server_files[i].size_of_file);
+
+      if (server_files[i].file_content == NULL) {
+        free(file_path);
+        return NULL;
+      }
+    }
+
+    free(file_path);
+  }
+
+  return server_files;
 }
