@@ -16,13 +16,142 @@ char* ReadFile(char* file_name, long int* file_size);
 char** SearchAfter(char* substring, char* string, char* separator, unsigned int* number_of_results);
 struct server_file* OpenServerFiles(char* server_paths, unsigned int* number_of_server_paths);
 
+char* ReceiveRequest(int connection, unsigned int* request_length) {
+  const unsigned int BUFF_SIZE = 512; // max size of bytes of receive buffer
+  char buff[BUFF_SIZE]; // for receive buffer
+
+  // these variables will be used to check whether the received bytes from client
+  // contain starting parts or ending parts of http request
+  char* start_of_request =  "HTTP/1.1";
+  char* end_of_request =  "\n\n";
+
+  char* received_temp = NULL;
+  char* received_data = NULL;
+
+  ssize_t bytes_received = 0;
+
+  unsigned int number_of_receives = 0;
+
+  // read client's request and print it out in console
+  bytes_received = recv(connection, buff, BUFF_SIZE, 0);
+  number_of_receives += 1;
+
+  while (bytes_received > 0) {
+    *request_length += (unsigned int) bytes_received;
+
+    if (number_of_receives > 100) {
+      shutdown(connection, SHUT_RD);
+    }
+
+    received_temp = (char*) realloc(received_data, (*request_length));
+
+    if (received_temp != NULL) {
+      received_data = received_temp;
+    }
+
+    else {
+      shutdown(connection, SHUT_RD);
+      break;
+    }
+
+    bytes_received = recv(connection, buff, BUFF_SIZE, 0);
+    number_of_receives += 1;
+  }
+
+  if (bytes_received < 0) {
+    free(received_data);
+    return NULL;
+  }
+
+  return received_data;
+}
+
+char* FormResponse(char* request_content, unsigned int request_length, struct server_file* server_files, unsigned int number_of_files) {
+  char* http_message = NULL;
+  char* http_header = NULL;
+  char* http_body = NULL;
+
+  unsigned int http_message_length;
+  unsigned int http_header_length;
+  unsigned int http_body_length;
+
+  if (strstr(request_content, "GET") != NULL) {
+    char** search_result;
+    unsigned int number_of_results;
+
+    char* url_path;
+
+    search_result = SearchAfter("GET ", request_content, " HTTP/1.1\n", &number_of_results);
+
+    if (search_result == NULL) {
+      return NULL;
+    }
+
+    if (number_of_results != 1) {
+      for (unsigned int i = 0; i < number_of_results; i++) {
+        free(search_result[i]);
+      }
+
+      free(search_result);
+      return NULL;
+    }
+
+    url_path = search_result[0];
+    free(search_result);
+
+    unsigned int i = 0;
+
+    for (; i < number_of_files; i++) {
+      if (strstr(server_files[i].url_path, url_path) != NULL) {
+        // return requested file with code 200
+        http_header = "HTTP/1.1 200 OK";
+        http_body = server_files[i].file_content;
+
+        free(url_path);
+        url_path = NULL;
+
+        break;
+      }
+    }
+
+    // if requested file was not in the server files
+    if (url_path != NULL) {
+      // return 404 error (file not found)
+      http_header = "HTTP/1.1 404 Not Found";
+      http_body = "<!DOCTYPE html>\n<html>\n<head>\n</head>\n<body>\n<h1>\n404 Not Found\n</h1>\n</body>\n</html>";
+
+      free(url_path);
+      url_path = NULL;
+    }
+
+    http_header_length = strlen(http_header);
+    http_body_length = strlen(http_body);
+
+    http_message_length = http_header_length + strlen("\n\n") + http_body_length;
+
+    http_message = (char*) malloc(sizeof(char) * (http_message_length + 1));
+    http_message[http_message_length] = '\0';
+
+    unsigned int j = 0;
+    for (; j < http_header_length; j++) {
+      http_message[j] = http_header[j];
+    }
+
+    for (; (j - http_header_length) < 2; j++) { // < 2, because strlen("\n\n") results in 2
+      http_message[j] = '\n';
+    }
+
+    for (; (j - http_header_length - strlen("\n\n")) < http_message_length; j++) {
+      http_message[j] = server_files[i].file_content[j - http_header_length - strlen("\n\n")];
+    }
+  }
+
+  return http_message;
+}
+
 int main(int argc, char* argv[]) {
   const unsigned int IP = (127 << 24) + 1; // for ip 127.0.0.1
   const unsigned short int PORT = 80;
-
-  const unsigned int BUFF_SIZE = 512; // max size of bytes of receive buffer
-  char buff[BUFF_SIZE]; // for receive buffer
-  ssize_t bytes_received = 0;
 
   // structure that holds server's IP, port number and address family
   // (it can be used either to create a server with these values or
@@ -48,22 +177,20 @@ int main(int argc, char* argv[]) {
       const unsigned short int MAX_CONNECTIONS = 10;
       int conns[MAX_CONNECTIONS]; // for connections
       unsigned short int N = 0; // N is number of connections
-      long int response_fsize; // fsize is file size
+      // long int response_fsize; // fsize is file size
       long int server_paths_fsize;
 
       // used only for accept(...) function
       unsigned int addr_len = sizeof (addr);
 
-      char* message;
+      char* response;
+      char* clients_request;
       char* server_paths;
-      char* url_path;
-      char* requested_method;
 
       struct server_file* server_files;
 
+      unsigned int clients_request_length;
       unsigned int number_of_resources;
-      int url_path_length;
-      int requested_method_length;
 
       // mark unexisting connections as -1
       for (unsigned short int i = 0; i < MAX_CONNECTIONS; i++) {
@@ -71,13 +198,13 @@ int main(int argc, char* argv[]) {
       }
 
       // read response file
-      message = ReadFile("response.txt", &response_fsize);
+      // = ReadFile("response.txt", &response_fsize);
 
-      if (message == NULL) {
-        close(sock);
-        perror("ReadFile()");
-        exit(EXIT_FAILURE);
-      }
+      // if (message == NULL) {
+      //   close(sock);
+      //   perror("ReadFile()");
+      //   exit(EXIT_FAILURE);
+      // }
 
       // read a file containing all url paths available in this server (in form of list)
       server_paths = ReadFile("paths.txt", &server_paths_fsize);
@@ -87,8 +214,6 @@ int main(int argc, char* argv[]) {
         perror("ReadFile()");
         exit(EXIT_FAILURE);
       }
-
-      number_of_resources = 0;
 
       server_files = OpenServerFiles(server_paths, &number_of_resources);
 
@@ -134,144 +259,39 @@ int main(int argc, char* argv[]) {
 
           puts("client's request:\n");
 
-          // read client's request and print it out in console
-          bytes_received = recv(conns[i], buff, BUFF_SIZE, 0);
-
-          // these variables will be used to check whether the received bytes from client
-          // contain starting parts or ending parts of http request
-          char* start_of_request = NULL;
-          char* end_of_request = NULL;
-
-          while (bytes_received > 0) {
-            start_of_request = strstr(buff, "HTTP/1.1");
-            end_of_request = strstr(buff, "\n\n");
-
-            if (start_of_request != NULL) {
-              int end_of_first_line = 0;
-
-              // locate the index of the first end line character (aka the end
-              // of first line of http message) in the string that holds the
-              // first part of http request (in other words, find where the
-              // first line ends in that string)
-              while (buff[end_of_first_line] != '\n') {
-                end_of_first_line += 1;
-              }
-
-              int space_count = 1;
-
-              int spaces[2];
-
-              for (int j = 0; j < end_of_first_line; j++) {
-                if (buff[j] == ' ') {
-                  // [space_count - 1] because space_count equals 1 initially
-                  // and not 0 (but 0 is the index of first element in arrays
-                  // so it should be used to access the first element of spaces
-                  // array)
-                  spaces[space_count - 1] = j;
-                  space_count += 1;
-                }
-              }
-
-              // the number of spaces in the frist line of the http request
-              // should be exactly 2: the first space after name of the http
-              // method (GET, POST, PUT, etc) and the second space after the
-              // url path to the requested resource. after that goes the version
-              // of http protocol and the end of line character
-              if (space_count != 2) {
-                close(conns[i]);
-                conns[i] = -1;
-                N -= 1;
-                break;
-              }
-
-              // (spaces[1] - spaces[0] - 1) is because the string is located
-              // between those indexes and so it excludes them (the first
-              // character of the string is located at (spaces[0] + 1) and the
-              // last character of the string is located at (spaces[1] - 1))
-              url_path_length = spaces[1] - spaces[0] - 1;
-              url_path = (char*) malloc(sizeof(char) * ((size_t) (url_path_length + 1)));
-              url_path[url_path_length] = '\0';
-
-              // (spaces[0] + 1) to exclude the first space character from
-              // the url path string (in other words, start indexing the string
-              // right after the index of first space of that string)
-              for (int j = spaces[0] + 1; j < url_path_length; j++) {
-                url_path[j] = buff[j];
-              }
-
-              // check if the requested path to resource on server exists in the list of avilable server's paths
-              if (strstr(server_paths, url_path) == NULL) {
-                close(conns[i]);
-                conns[i] = -1;
-                N -= 1;
-                break;
-              }
-
-              requested_method_length = spaces[0];
-              requested_method = (char*) malloc(sizeof(char) * ((size_t) (requested_method_length + 1)));
-              requested_method[requested_method_length] = '\0';
-
-              for (int j = 0; j < requested_method_length; j++) {
-                requested_method[j] = buff[j];
-              }
-
-              if (strstr(server_paths, requested_method) == NULL) {
-                close(conns[i]);
-                conns[i] = -1;
-                N -= 1;
-                break;
-              }
-
-              // send server's response to client
-              if (send(conns[i], message, (size_t) (response_fsize + 1), 0) < 0) {
-                close(conns[i]);
-                conns[i] = -1;
-                N -= 1;
-                break;
-              }
-
-              // close the write option for connetion socket
-              if (shutdown(conns[i], SHUT_WR) < 0) {
-                close(conns[i]);
-                conns[i] = -1;
-                N -= 1;
-                break;
-              }
-
-              free(url_path);
-              free(requested_method);
-            }
-
-            // display request message in console
-            for (ssize_t j = 0; j < bytes_received; j++) {
-              putchar(buff[i]);
-            }
-
-            if (end_of_request != NULL) {
-              // close the read option for connection socket
-              if (shutdown(conns[i], SHUT_RD) < 0) {
-                close(conns[i]);
-                conns[i] = -1;
-                N -= 1;
-                break;
-              }
-
-              close(conns[i]);
-              conns[i] = -1;
-              N -= 1;
-              break;
-            }
-
-            bytes_received = recv(conns[i], buff, BUFF_SIZE, 0);
-          }
+          // receive request from client
+          clients_request = ReceiveRequest(conns[i], &clients_request_length);
 
           // check if any error occured while trying to receive request from client
-          if (bytes_received < 0) {
+          if (clients_request == NULL) {
             close(conns[i]);
             conns[i] = -1;
             N -= 1;
             continue;
           }
+
+          // display request message in console
+          for (unsigned int j = 0; j < clients_request_length; j++) {
+            putchar(clients_request[j]);
+          }
+
+          response = FormResponse(clients_request, clients_request_length, server_files, number_of_resources);
+
+          // check if any error occurred while forming server's response
+          if (response == NULL) {
+            free(clients_request);
+            close(conns[i]);
+            conns[i] = -1;
+            N -= 1;
+            continue;
+          }
+
+          free(clients_request);
+
+          send(sock, response, (size_t) (strlen(response) + 1), 0);
+
+          free(response);
+          shutdown(conns[i], SHUT_WR);
 
           // if current connection is valid, then close it after sending server's message
           // (because in this implementation server sends only one message
@@ -290,13 +310,16 @@ int main(int argc, char* argv[]) {
       }
 
       free(server_files);
-
-      free(message);
       free(server_paths);
     }
 
     // if program is used as client
     else if (strcmp(argv[1], "-c") == 0) {
+      const unsigned int BUFF_SIZE = 512; // max size of bytes of receive buffer
+      char buff[BUFF_SIZE]; // for receive buffer
+
+      ssize_t bytes_received = 0;
+
       long int request_fsize;
 
       // read request file
@@ -488,6 +511,8 @@ char** SearchAfter(char* substring, char* string, char* separator, unsigned int*
             }
 
             // that means that the algorithm reached the separator for the string search
+            // (if this block will be removed, then the length would be incremented until
+            // the algorithm reaches the end of the string)
             if (k == separator_length) {
               break;
             }
