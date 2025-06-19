@@ -20,11 +20,6 @@ char* ReceiveRequest(int connection, unsigned int* request_length) {
   const unsigned int BUFF_SIZE = 512; // max size of bytes of receive buffer
   char buff[BUFF_SIZE]; // for receive buffer
 
-  // these variables will be used to check whether the received bytes from client
-  // contain starting parts or ending parts of http request
-  char* start_of_request =  "HTTP/1.1";
-  char* end_of_request =  "\n\n";
-
   char* received_temp = NULL;
   char* received_data = NULL;
 
@@ -37,10 +32,10 @@ char* ReceiveRequest(int connection, unsigned int* request_length) {
   number_of_receives += 1;
 
   while (bytes_received > 0) {
-    *request_length += (unsigned int) bytes_received;
+    *request_length += BUFF_SIZE;
 
-    if (number_of_receives > 100) {
-      shutdown(connection, SHUT_RD);
+    for (unsigned int i = 0; i < BUFF_SIZE; i++) {
+      received_data[(number_of_receives - 1) * BUFF_SIZE + i] = buff[i];
     }
 
     received_temp = (char*) realloc(received_data, (*request_length));
@@ -50,6 +45,11 @@ char* ReceiveRequest(int connection, unsigned int* request_length) {
     }
 
     else {
+      shutdown(connection, SHUT_RD);
+      break;
+    }
+
+    if (number_of_receives > 100) {
       shutdown(connection, SHUT_RD);
       break;
     }
