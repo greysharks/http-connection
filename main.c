@@ -30,17 +30,27 @@ char* ReceiveRequest(int connection, unsigned int* request_length) {
   // read client's request and print it out in console
   bytes_received = recv(connection, buff, BUFF_SIZE, 0);
   number_of_receives += 1;
+  *request_length = 0;
 
   while (bytes_received > 0) {
     *request_length += BUFF_SIZE;
 
-    for (unsigned int i = 0; i < BUFF_SIZE; i++) {
-      received_data[(number_of_receives - 1) * BUFF_SIZE + i] = buff[i];
-    }
-
-    received_temp = (char*) realloc(received_data, (*request_length));
+    received_temp = (char*) malloc(sizeof(char) * (*request_length));
 
     if (received_temp != NULL) {
+      // copy received data to new block of memory
+      for (unsigned int i = 0; i < (number_of_receives - 1) * BUFF_SIZE; i++) {
+        received_temp[i] = received_data[i];
+      }
+
+      // add all characters from the receive buff to the new block of memory of received data
+      for (unsigned int i = 0; i < BUFF_SIZE; i++) {
+        received_temp[(number_of_receives - 1) * BUFF_SIZE + i] = buff[i];
+      }
+
+      // free old block of memory
+      free(received_data);
+
       received_data = received_temp;
     }
 
