@@ -135,6 +135,8 @@ char* ReceiveMessage(int connection, unsigned long int* http_message_length) { /
         free(http_header);
         http_header = temp;
 
+        // printf("header_length: %lu\n", http_header_length);
+
         // printf("4. Get the number of bytes for HTTP body section, if Content-Length header is inside HTTP header section\n");
 
         // check if there is Content_Length header in HTTP header section
@@ -174,8 +176,8 @@ char* ReceiveMessage(int connection, unsigned long int* http_message_length) { /
           // printf("5. Receive first part of HTTP body section\n");
 
           // check if there is data for HTTP body section in current receive buffer
-          if (last_header_length != (strlen(buff) - strlen(END_OF_HTTP_HEADER))) {
-            http_body_length += strlen(buff) - strlen(END_OF_HTTP_HEADER) - last_header_length;
+          if (last_header_length != (bytes_received - strlen(END_OF_HTTP_HEADER))) {
+            http_body_length += bytes_received - strlen(END_OF_HTTP_HEADER) - last_header_length;
             http_body = (char*) malloc(sizeof(char) * (http_body_length));
 
             if (http_body == NULL) {
@@ -245,12 +247,14 @@ char* ReceiveMessage(int connection, unsigned long int* http_message_length) { /
         free(http_body);
         http_body = temp;
 
+        // printf("body_length: %lu\n", http_body_length);
+
         // printf("8. Form HTTP message from HTTP header and HTTP body sections\n");
 
         // combine HTTP header and HTTP body sections to form HTTP message
-        *http_message_length = http_header_length + http_body_length;
+        *http_message_length = http_header_length + http_body_length + strlen(END_OF_HTTP_HEADER);
         http_message = (char*) malloc(sizeof(char) * (*http_message_length + 1));
-        http_message[http_header_length + http_body_length] = '\0';
+        http_message[*http_message_length] = '\0';
 
         if (http_message == NULL) {
           free(http_header);
@@ -263,13 +267,19 @@ char* ReceiveMessage(int connection, unsigned long int* http_message_length) { /
           http_message[i] = http_header[i];
         }
 
+        for (unsigned long int i = 0; i < strlen(END_OF_HTTP_HEADER); i++) {
+         http_message[i + http_header_length] = END_OF_HTTP_HEADER[i];
+        }
+
         // copy all data from collected HTTP body section
         for (unsigned long int i = 0; i < http_body_length; i++) {
-          http_message[http_header_length + i] = http_body[i];
+          http_message[i + http_header_length + strlen(END_OF_HTTP_HEADER)] = http_body[i];
         }
 
         free(http_header);
         free(http_body);
+
+        // printf("message_length: %lu\n", *http_message_length);
 
         break;
       }
