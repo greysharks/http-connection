@@ -12,287 +12,10 @@ struct server_file {
   long int size_of_file;
 };
 
-char* ReadFile(char* file_name, long int* file_size);
-char** SearchAfter(char* substring, char* string, char* separator, unsigned long int* number_of_results);
-struct server_file* OpenServerFiles(char* server_paths, unsigned long int* number_of_server_paths);
-
-char* ReceiveMessage(int connection, unsigned long int* http_message_length) { // receive HTTP message
-  const unsigned int BUFF_SIZE = 512; // max size of bytes of receive buffer
-  const unsigned short int MAX_NUMBER_OF_ATTEMPTS = 100;
-  char buff[BUFF_SIZE]; // for receive buffer
-
-  const char* START_OF_HTTP_HEADER = "HTTP/1.1";
-  const char* END_OF_HTTP_HEADER = "\n\n";
-
-  char* temp = NULL;
-  char* http_message = NULL;
-  char* http_header = NULL;
-  char* http_body = NULL;
-
-  unsigned long int http_header_length = 0;
-  unsigned long int http_body_length = 0;
-
-  ssize_t bytes_received = 0;
-
-  unsigned short int number_of_attempts = 0;
-
-  *http_message_length = 0;
-
-  // intial receive
-  bytes_received = recv(connection, buff, BUFF_SIZE, 0);
-
-  // start making attempts of receiving data until they become successfull or until they reach the limit
-  while (number_of_attempts < MAX_NUMBER_OF_ATTEMPTS) {
-    if (bytes_received > 0) {
-      // check if there is start of HTTP message section in the current receive buffer
-      if (strstr(buff, START_OF_HTTP_HEADER) != NULL) {
-        char* end_of_header = NULL;
-
-        // printf("1. Start receiving HTTP header\n");
-
-        // start collecting bytes of HTTP header section until substring, that signifies the end of this section occurs
-        while (strstr(buff, END_OF_HTTP_HEADER) == NULL) {
-          http_header_length += (unsigned long int) bytes_received;
-
-          temp = (char*) malloc(sizeof(char) * (http_header_length));
-
-          if (temp == NULL) {
-            free(http_header);
-            return NULL;
-          }
-
-          //// copy previously received data to new block of memory
-          for (unsigned long int i = 0; i < (http_header_length - (unsigned long int) bytes_received); i++) {
-            temp[i] = http_header[i];
-          }
-
-          //// add all characters from the receive buff to the new block of memory of received data
-          for (ssize_t i = 0; i < bytes_received; i++) {
-            temp[http_header_length - (unsigned long int) bytes_received + i] = buff[i];
-          }
-
-          //// free old block of memory
-          free(http_header);
-          http_header = temp;
-          bytes_received = recv(connection, buff, BUFF_SIZE, 0);
-        }
-
-        // printf("2. Receive the remaining part of HTTP header\n");
-
-        // get the position of the substring, that signifies the end of HTTP header section
-        end_of_header = strstr(buff, END_OF_HTTP_HEADER);
-
-        unsigned long int last_header_length = 0; // length of last part of HTTP header section (part from buffer that comes before "\n\n")
-
-        // get the length of data that comes before the substring (that signifies the end of HTTP header section)
-        while (&(buff[last_header_length]) != end_of_header) {
-          last_header_length += 1;
-        }
-
-        // collect the last data from HTTP header section
-        if (last_header_length > 0) {
-          http_header_length += last_header_length;
-          temp = (char*) malloc(sizeof(char) * (http_header_length));
-
-          if (temp == NULL) {
-            free(http_header);
-            return NULL;
-          }
-
-          //// copy previously received data to new block of memory
-          for (unsigned long int i = 0; i < (http_header_length - last_header_length); i++) {
-            temp[i] = http_header[i];
-          }
-
-          //// add all characters from the receive buff to the new block of memory of received data
-          for (unsigned long int i = 0; i < last_header_length; i++) {
-            temp[http_header_length - last_header_length + i] = buff[i];
-          }
-
-          //// free old block of memory
-          free(http_header);
-          http_header = temp;
-        }
-
-        // printf("3. Add null terminator in the end of string, containing HTTP header section\n");
-
-        // add null terminator character in the end of collected HTTP header section
-        temp = (char*) malloc(sizeof(char) * (http_header_length + 1));
-
-        if (temp == NULL) {
-          free(http_header);
-          return NULL;
-        }
-
-        //// copy previously received data to new block of memory
-        for (unsigned long int i = 0; i < http_header_length; i++) {
-          temp[i] = http_header[i];
-        }
-
-        temp[http_header_length] = '\0';
-
-        //// free old block of memory
-        free(http_header);
-        http_header = temp;
-
-        // printf("header_length: %lu\n", http_header_length);
-
-        // printf("4. Get the number of bytes for HTTP body section, if Content-Length header is inside HTTP header section\n");
-
-        // check if there is Content_Length header in HTTP header section
-        if (strstr(http_header, "Content-Length") != NULL) {
-          char** content_length_bytes;
-          unsigned long int number_of_results = 0;
-          unsigned long int number_of_bytes;
-          unsigned long int length_of_number = 0;
-
-          // get the number of bytes of data in HTTP body section, specified by the Content_Length header
-          content_length_bytes = SearchAfter("Content-Length: ", http_header, "\n", &number_of_results);
-
-          if (content_length_bytes == NULL) {
-            free(http_header);
-            return NULL;
-          }
-
-          if (number_of_results != 1) {
-            for (unsigned long int i = 0; i < number_of_results; i++) {
-              free(content_length_bytes[i]);
-            }
-
-            free(content_length_bytes);
-            free(http_header);
-            return NULL;
-          }
-
-          // some of the type conversion..
-          number_of_bytes = strtoul(content_length_bytes[0], NULL, 10);
-
-          for (unsigned long int i = 0; i < number_of_results; i++) {
-            free(content_length_bytes[i]);
-          }
-
-          free(content_length_bytes);
-
-          // printf("5. Receive first part of HTTP body section\n");
-
-          // check if there is data for HTTP body section in current receive buffer
-          if (last_header_length != (bytes_received - strlen(END_OF_HTTP_HEADER))) {
-            http_body_length += bytes_received - strlen(END_OF_HTTP_HEADER) - last_header_length;
-            http_body = (char*) malloc(sizeof(char) * (http_body_length));
-
-            if (http_body == NULL) {
-              free(http_header);
-              return NULL;
-            }
-
-            // get the first data of HTTP body section
-            for (unsigned long int i = 0; i < http_body_length; i++) {
-              http_body[i] = buff[last_header_length + strlen(END_OF_HTTP_HEADER) + i];
-            }
-
-            number_of_bytes -= http_body_length;
-          }
-
-          // printf("6. Start receiving HTTP body section, until all bytes are received\n");
-
-          // start collecting data for HTTP body section until all bytes of data (specified by Content-Length header) are collected
-          bytes_received = recv(connection, buff, BUFF_SIZE, 0);
-
-          while (number_of_bytes > 0) {
-            http_body_length += (unsigned long int) bytes_received;
-            temp = (char*) malloc(sizeof(char) * (http_body_length));
-
-            if (temp == NULL) {
-              free(http_header);
-              free(http_body);
-              return NULL;
-            }
-
-            //// copy previously received data to new block of memory
-            for (unsigned long int i = 0; i < (http_body_length - (unsigned long int) bytes_received); i++) {
-              temp[i] = http_body[i];
-            }
-
-            //// add all characters from the receive buff to the new block of memory of received data
-            for (ssize_t i = 0; i < bytes_received; i++) {
-              temp[http_body_length - (unsigned long int) bytes_received + i] = buff[i];
-            }
-
-            //// free old block of memory
-            free(http_body);
-            http_body = temp;
-            number_of_bytes -= bytes_received;
-          }
-        }
-
-        // printf("7. Add null terminator in the end of string, containing HTTP body section\n");
-
-        // add null terminator character in the end of collected HTTP body section
-        temp = (char*) malloc(sizeof(char) * (http_body_length + 1));
-
-        if (temp == NULL) {
-          free(http_header);
-          free(http_body);
-          return NULL;
-        }
-
-        //// copy previously received data to new block of memory
-        for (unsigned long int i = 0; i < http_body_length; i++) {
-          temp[i] = http_body[i];
-        }
-
-        temp[http_body_length] = '\0';
-
-        //// free old block of memory
-        free(http_body);
-        http_body = temp;
-
-        // printf("body_length: %lu\n", http_body_length);
-
-        // printf("8. Form HTTP message from HTTP header and HTTP body sections\n");
-
-        // combine HTTP header and HTTP body sections to form HTTP message
-        *http_message_length = http_header_length + http_body_length + strlen(END_OF_HTTP_HEADER);
-        http_message = (char*) malloc(sizeof(char) * (*http_message_length + 1));
-        http_message[*http_message_length] = '\0';
-
-        if (http_message == NULL) {
-          free(http_header);
-          free(http_body);
-          return NULL;
-        }
-
-        // copy all data from collected HTTP header section
-        for (unsigned long int i = 0; i < http_header_length; i++) {
-          http_message[i] = http_header[i];
-        }
-
-        for (unsigned long int i = 0; i < strlen(END_OF_HTTP_HEADER); i++) {
-         http_message[i + http_header_length] = END_OF_HTTP_HEADER[i];
-        }
-
-        // copy all data from collected HTTP body section
-        for (unsigned long int i = 0; i < http_body_length; i++) {
-          http_message[i + http_header_length + strlen(END_OF_HTTP_HEADER)] = http_body[i];
-        }
-
-        free(http_header);
-        free(http_body);
-
-        // printf("message_length: %lu\n", *http_message_length);
-
-        break;
-      }
-    }
-
-    else { // make another attempt if previous one was unsuccessfull
-      bytes_received = recv(connection, buff, BUFF_SIZE, 0);
-      number_of_attempts += 1;
-    }
-  }
-
-  return http_message;
-}
+char* ReadFile(char* file_name, long int* file_size); // return a string, containing the content of requested file
+char** SearchAfter(char* substring, char* string, char* separator, unsigned long int* number_of_results); // excerpt information from a string, pointed out by the given substring and the given separator (start and the end of each portion of information)
+struct server_file* OpenServerFiles(char* server_paths, unsigned long int* number_of_server_paths); // return the array of opened files (their content) along with their location paths (A.K.A. server paths)
+char* ReceiveMessage(int connection, unsigned long int* http_message_length); // receive HTTP message (either client's request or server's response)
 
 char* FormResponse(char* request_content, unsigned long int request_length, struct server_file* server_files, unsigned int number_of_files) {
   char* http_message = NULL;
@@ -977,4 +700,282 @@ struct server_file* OpenServerFiles(char* server_paths, unsigned long int* numbe
   }
 
   return server_files;
+}
+
+char* ReceiveMessage(int connection, unsigned long int* http_message_length) {
+  const unsigned int BUFF_SIZE = 512; // max size of bytes of receive buffer
+  const unsigned short int MAX_NUMBER_OF_ATTEMPTS = 100;
+  char buff[BUFF_SIZE]; // for receive buffer
+
+  const char* START_OF_HTTP_HEADER = "HTTP/1.1";
+  const char* END_OF_HTTP_HEADER = "\n\n";
+
+  char* temp = NULL;
+  char* http_message = NULL;
+  char* http_header = NULL;
+  char* http_body = NULL;
+
+  unsigned long int http_header_length = 0;
+  unsigned long int http_body_length = 0;
+
+  ssize_t bytes_received = 0;
+
+  unsigned short int number_of_attempts = 0;
+
+  *http_message_length = 0;
+
+  // intial receive
+  bytes_received = recv(connection, buff, BUFF_SIZE, 0);
+
+  // start making attempts of receiving data until they become successfull or until they reach the limit
+  while (number_of_attempts < MAX_NUMBER_OF_ATTEMPTS) {
+    if (bytes_received > 0) {
+      // check if there is start of HTTP message section in the current receive buffer
+      if (strstr(buff, START_OF_HTTP_HEADER) != NULL) {
+        char* end_of_header = NULL;
+
+        // printf("1. Start receiving HTTP header\n");
+
+        // start collecting bytes of HTTP header section until substring, that signifies the end of this section occurs
+        while (strstr(buff, END_OF_HTTP_HEADER) == NULL) {
+          http_header_length += (unsigned long int) bytes_received;
+
+          temp = (char*) malloc(sizeof(char) * (http_header_length));
+
+          if (temp == NULL) {
+            free(http_header);
+            return NULL;
+          }
+
+          //// copy previously received data to new block of memory
+          for (unsigned long int i = 0; i < (http_header_length - (unsigned long int) bytes_received); i++) {
+            temp[i] = http_header[i];
+          }
+
+          //// add all characters from the receive buff to the new block of memory of received data
+          for (ssize_t i = 0; i < bytes_received; i++) {
+            temp[http_header_length - (unsigned long int) bytes_received + i] = buff[i];
+          }
+
+          //// free old block of memory
+          free(http_header);
+          http_header = temp;
+          bytes_received = recv(connection, buff, BUFF_SIZE, 0);
+        }
+
+        // printf("2. Receive the remaining part of HTTP header\n");
+
+        // get the position of the substring, that signifies the end of HTTP header section
+        end_of_header = strstr(buff, END_OF_HTTP_HEADER);
+
+        unsigned long int last_header_length = 0; // length of last part of HTTP header section (part from buffer that comes before "\n\n")
+
+        // get the length of data that comes before the substring (that signifies the end of HTTP header section)
+        while (&(buff[last_header_length]) != end_of_header) {
+          last_header_length += 1;
+        }
+
+        // collect the last data from HTTP header section
+        if (last_header_length > 0) {
+          http_header_length += last_header_length;
+          temp = (char*) malloc(sizeof(char) * (http_header_length));
+
+          if (temp == NULL) {
+            free(http_header);
+            return NULL;
+          }
+
+          //// copy previously received data to new block of memory
+          for (unsigned long int i = 0; i < (http_header_length - last_header_length); i++) {
+            temp[i] = http_header[i];
+          }
+
+          //// add all characters from the receive buff to the new block of memory of received data
+          for (unsigned long int i = 0; i < last_header_length; i++) {
+            temp[http_header_length - last_header_length + i] = buff[i];
+          }
+
+          //// free old block of memory
+          free(http_header);
+          http_header = temp;
+        }
+
+        // printf("3. Add null terminator in the end of string, containing HTTP header section\n");
+
+        // add null terminator character in the end of collected HTTP header section
+        temp = (char*) malloc(sizeof(char) * (http_header_length + 1));
+
+        if (temp == NULL) {
+          free(http_header);
+          return NULL;
+        }
+
+        //// copy previously received data to new block of memory
+        for (unsigned long int i = 0; i < http_header_length; i++) {
+          temp[i] = http_header[i];
+        }
+
+        temp[http_header_length] = '\0';
+
+        //// free old block of memory
+        free(http_header);
+        http_header = temp;
+
+        // printf("header_length: %lu\n", http_header_length);
+
+        // printf("4. Get the number of bytes for HTTP body section, if Content-Length header is inside HTTP header section\n");
+
+        // check if there is Content_Length header in HTTP header section
+        if (strstr(http_header, "Content-Length") != NULL) {
+          char** content_length_bytes;
+          unsigned long int number_of_results = 0;
+          unsigned long int number_of_bytes;
+          unsigned long int length_of_number = 0;
+
+          // get the number of bytes of data in HTTP body section, specified by the Content_Length header
+          content_length_bytes = SearchAfter("Content-Length: ", http_header, "\n", &number_of_results);
+
+          if (content_length_bytes == NULL) {
+            free(http_header);
+            return NULL;
+          }
+
+          if (number_of_results != 1) {
+            for (unsigned long int i = 0; i < number_of_results; i++) {
+              free(content_length_bytes[i]);
+            }
+
+            free(content_length_bytes);
+            free(http_header);
+            return NULL;
+          }
+
+          // some of the type conversion..
+          number_of_bytes = strtoul(content_length_bytes[0], NULL, 10);
+
+          for (unsigned long int i = 0; i < number_of_results; i++) {
+            free(content_length_bytes[i]);
+          }
+
+          free(content_length_bytes);
+
+          // printf("5. Receive first part of HTTP body section\n");
+
+          // check if there is data for HTTP body section in current receive buffer
+          if (last_header_length != (bytes_received - strlen(END_OF_HTTP_HEADER))) {
+            http_body_length += bytes_received - strlen(END_OF_HTTP_HEADER) - last_header_length;
+            http_body = (char*) malloc(sizeof(char) * (http_body_length));
+
+            if (http_body == NULL) {
+              free(http_header);
+              return NULL;
+            }
+
+            // get the first data of HTTP body section
+            for (unsigned long int i = 0; i < http_body_length; i++) {
+              http_body[i] = buff[last_header_length + strlen(END_OF_HTTP_HEADER) + i];
+            }
+
+            number_of_bytes -= http_body_length;
+          }
+
+          // printf("6. Start receiving HTTP body section, until all bytes are received\n");
+
+          // start collecting data for HTTP body section until all bytes of data (specified by Content-Length header) are collected
+          bytes_received = recv(connection, buff, BUFF_SIZE, 0);
+
+          while (number_of_bytes > 0) {
+            http_body_length += (unsigned long int) bytes_received;
+            temp = (char*) malloc(sizeof(char) * (http_body_length));
+
+            if (temp == NULL) {
+              free(http_header);
+              free(http_body);
+              return NULL;
+            }
+
+            //// copy previously received data to new block of memory
+            for (unsigned long int i = 0; i < (http_body_length - (unsigned long int) bytes_received); i++) {
+              temp[i] = http_body[i];
+            }
+
+            //// add all characters from the receive buff to the new block of memory of received data
+            for (ssize_t i = 0; i < bytes_received; i++) {
+              temp[http_body_length - (unsigned long int) bytes_received + i] = buff[i];
+            }
+
+            //// free old block of memory
+            free(http_body);
+            http_body = temp;
+            number_of_bytes -= bytes_received;
+          }
+        }
+
+        // printf("7. Add null terminator in the end of string, containing HTTP body section\n");
+
+        // add null terminator character in the end of collected HTTP body section
+        temp = (char*) malloc(sizeof(char) * (http_body_length + 1));
+
+        if (temp == NULL) {
+          free(http_header);
+          free(http_body);
+          return NULL;
+        }
+
+        //// copy previously received data to new block of memory
+        for (unsigned long int i = 0; i < http_body_length; i++) {
+          temp[i] = http_body[i];
+        }
+
+        temp[http_body_length] = '\0';
+
+        //// free old block of memory
+        free(http_body);
+        http_body = temp;
+
+        // printf("body_length: %lu\n", http_body_length);
+
+        // printf("8. Form HTTP message from HTTP header and HTTP body sections\n");
+
+        // combine HTTP header and HTTP body sections to form HTTP message
+        *http_message_length = http_header_length + http_body_length + strlen(END_OF_HTTP_HEADER);
+        http_message = (char*) malloc(sizeof(char) * (*http_message_length + 1));
+        http_message[*http_message_length] = '\0';
+
+        if (http_message == NULL) {
+          free(http_header);
+          free(http_body);
+          return NULL;
+        }
+
+        // copy all data from collected HTTP header section
+        for (unsigned long int i = 0; i < http_header_length; i++) {
+          http_message[i] = http_header[i];
+        }
+
+        for (unsigned long int i = 0; i < strlen(END_OF_HTTP_HEADER); i++) {
+         http_message[i + http_header_length] = END_OF_HTTP_HEADER[i];
+        }
+
+        // copy all data from collected HTTP body section
+        for (unsigned long int i = 0; i < http_body_length; i++) {
+          http_message[i + http_header_length + strlen(END_OF_HTTP_HEADER)] = http_body[i];
+        }
+
+        free(http_header);
+        free(http_body);
+
+        // printf("message_length: %lu\n", *http_message_length);
+
+        break;
+      }
+    }
+
+    else { // make another attempt if previous one was unsuccessfull
+      bytes_received = recv(connection, buff, BUFF_SIZE, 0);
+      number_of_attempts += 1;
+    }
+  }
+
+  return http_message;
 }
