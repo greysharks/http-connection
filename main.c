@@ -17,7 +17,7 @@ char** SearchAfter(char* substring, char* string, char* separator, unsigned long
 struct server_file* OpenServerFiles(char* server_paths, unsigned long int* number_of_server_paths); // return the array of opened files (their content) along with their location paths (A.K.A. server paths)
 char* ReceiveMessage(int connection, unsigned long int* http_message_length); // receive HTTP message (either client's request or server's response)
 
-char* FormResponse(char* request_content, unsigned long int request_length, struct server_file* server_files, unsigned int number_of_files) {
+char* FormResponse(char* request_content, unsigned long int request_length, struct server_file* server_files, unsigned long int number_of_files) {
   char* http_message = NULL;
   char* http_header = NULL;
   char* http_body = NULL;
@@ -78,7 +78,12 @@ char* FormResponse(char* request_content, unsigned long int request_length, stru
     http_header_length = strlen(http_header);
     http_body_length = strlen(http_body);
 
+    // printf("http_header_length: %lu\n", http_header_length);
+    // printf("http_body_length: %lu\n", http_body_length);
+
     http_message_length = http_header_length + strlen("\n\n") + http_body_length;
+
+    // printf("http_message_length: %lu\n", http_message_length);
 
     http_message = (char*) malloc(sizeof(char) * (http_message_length + 1));
     http_message[http_message_length] = '\0';
@@ -88,7 +93,7 @@ char* FormResponse(char* request_content, unsigned long int request_length, stru
       http_message[j] = http_header[j];
     }
 
-    for (; (j - http_header_length) < 2; j++) { // < 2, because strlen("\n\n") results in 2
+    for (; (j - http_header_length) < 2; j++) { // (j - http_header_length) < 2, because strlen("\n\n") results in 2
       http_message[j] = '\n';
     }
 
@@ -239,9 +244,10 @@ int main(int argc, char* argv[]) {
 
           free(clients_request);
 
-          send(sock, response, (size_t) (strlen(response) + 1), 0);
+          send(conns[i], response, (size_t) strlen(response), 0);
 
           free(response);
+
           shutdown(conns[i], SHUT_WR);
 
           // if current connection is valid, then close it after sending server's message
