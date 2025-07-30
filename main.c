@@ -16,94 +16,7 @@ char* ReadFile(char* file_name, long int* file_size); // return a string, contai
 char** SearchAfter(char* substring, char* string, char* separator, unsigned long int* number_of_results); // excerpt information from a string, pointed out by the given substring and the given separator (start and the end of each portion of information)
 struct server_file* OpenServerFiles(char* server_paths, unsigned long int* number_of_server_paths); // return the array of opened files (their content) along with their location paths (A.K.A. server paths)
 char* ReceiveMessage(int connection, unsigned long int* http_message_length); // receive HTTP message (either client's request or server's response)
-
-char* FormResponse(char* request_content, unsigned long int request_length, struct server_file* server_files, unsigned long int number_of_files) {
-  char* http_message = NULL;
-  char* http_header = NULL;
-  char* http_body = NULL;
-
-  unsigned long int http_message_length;
-  unsigned long int http_header_length;
-  unsigned long int http_body_length;
-
-  if (strstr(request_content, "GET") != NULL) {
-    char** search_result;
-    unsigned long int number_of_results;
-
-    char* url_path;
-
-    search_result = SearchAfter("GET ", request_content, " HTTP/1.1\n", &number_of_results);
-
-    if (search_result == NULL) {
-      return NULL;
-    }
-
-    if (number_of_results != 1) {
-      for (unsigned long int i = 0; i < number_of_results; i++) {
-        free(search_result[i]);
-      }
-
-      free(search_result);
-      return NULL;
-    }
-
-    url_path = search_result[0];
-    free(search_result);
-
-    unsigned long int i = 0;
-
-    for (; i < number_of_files; i++) {
-      if (strstr(server_files[i].url_path, url_path) != NULL) {
-        // return requested file with code 200
-        http_header = "HTTP/1.1 200 OK";
-        http_body = server_files[i].file_content;
-
-        free(url_path);
-        url_path = NULL;
-
-        break;
-      }
-    }
-
-    // if requested file was not in the server files
-    if (url_path != NULL) {
-      // return 404 error (file not found)
-      http_header = "HTTP/1.1 404 Not Found";
-      http_body = "<!DOCTYPE html>\n<html>\n<head>\n</head>\n<body>\n<h1>\n404 Not Found\n</h1>\n</body>\n</html>";
-
-      free(url_path);
-      url_path = NULL;
-    }
-
-    http_header_length = strlen(http_header);
-    http_body_length = strlen(http_body);
-
-    // printf("http_header_length: %lu\n", http_header_length);
-    // printf("http_body_length: %lu\n", http_body_length);
-
-    http_message_length = http_header_length + strlen("\n\n") + http_body_length;
-
-    // printf("http_message_length: %lu\n", http_message_length);
-
-    http_message = (char*) malloc(sizeof(char) * (http_message_length + 1));
-    http_message[http_message_length] = '\0';
-
-    unsigned long int j = 0;
-    for (; j < http_header_length; j++) {
-      http_message[j] = http_header[j];
-    }
-
-    for (; (j - http_header_length) < 2; j++) { // (j - http_header_length) < 2, because strlen("\n\n") results in 2
-      http_message[j] = '\n';
-    }
-
-    for (; (j - http_header_length - strlen("\n\n")) < http_message_length; j++) {
-      http_message[j] = server_files[i].file_content[j - http_header_length - strlen("\n\n")];
-    }
-  }
-
-  return http_message;
-}
+char* FormResponse(char* request_content, unsigned long int request_length, struct server_file* server_files, unsigned long int number_of_files); // form server response based on client's request
 
 int main(int argc, char* argv[]) {
   const unsigned int IP = (127 << 24) + 1; // for ip 127.0.0.1
@@ -384,16 +297,16 @@ char* ReadFile(char* file_name, long int* file_size) {
 char** SearchAfter(char* substring, char* string, char* separator, unsigned long int* number_of_results) {
   char** results = NULL;
 
-  unsigned long int string_length = strlen(string);
-  unsigned long int substring_length = strlen(substring);
-  unsigned long int separator_length = strlen(separator);
+  size_t string_length = strlen(string);
+  size_t substring_length = strlen(substring);
+  size_t separator_length = strlen(separator);
 
-  int count = 0;
+  *number_of_results = 0;
 
   // count number of substrings placed in the string
-  for (unsigned long int i = 0; i < string_length; i++) {
+  for (size_t i = 0; i < string_length; i++) {
     if (string[i] == substring[0]) {
-      unsigned long int j = 0;
+      size_t j = 0;
 
       // check if the substring is in the string
       while (string[i + j] == substring[j]) {
@@ -414,26 +327,24 @@ char** SearchAfter(char* substring, char* string, char* separator, unsigned long
         // (j - 1) moves index to the position of the final character of the string, so when the index gets incremented (i++)
         // in the end of for loop iteration -- the index gets positioned right after the the end of substring
         i += j - 1;
-        count += 1;
+        *number_of_results += 1;
       }
     }
   }
-
-  *number_of_results = count;
 
   if (number_of_results == 0) {
     return NULL;
   }
 
-  results = (char**) malloc((sizeof (char*)) * ((size_t) count));
+  results = (char**) malloc((sizeof (char*)) * (*number_of_results));
 
-  count = 0;
+  unsigned int count = 0;
 
   // get all substrings after given substring but before the given separator
-  for (unsigned long int i = 0; i < string_length; i++) {
+  for (size_t i = 0; i < string_length; i++) {
     // find again each place where substring is in the string
     if (string[i] == substring[0]) {
-      unsigned long int j = 0;
+      size_t j = 0;
 
       while (string[i + j] == substring[j]) {
         j += 1;
@@ -449,14 +360,14 @@ char** SearchAfter(char* substring, char* string, char* separator, unsigned long
         // move to the part of the string that starts right after the given substring
         i += j;
 
-        unsigned long int length = 0;
+        size_t length = 0;
 
         j = 0;
 
         // get the length of searched substring
         while (string[i + length] != '\0') {
           if (string[i + length] == separator[0]) {
-            unsigned long int k = 0;
+            size_t k = 0;
 
             while (string[i + length + k] == separator[k]) {
               k += 1;
@@ -478,7 +389,7 @@ char** SearchAfter(char* substring, char* string, char* separator, unsigned long
           length += 1;
         }
 
-        char* result_found = (char*) malloc(sizeof(char) * ((size_t)(length + 1)));
+        char* result_found = (char*) malloc(sizeof(char) * (length + 1));
         result_found[length] = '\0';
 
         j = 0;
@@ -510,7 +421,7 @@ struct server_file* OpenServerFiles(char* server_paths, unsigned long int* numbe
   char** available_resources;
   struct server_file* server_files;
   char* file_path;
-  unsigned long int file_path_length;
+  size_t file_path_length;
 
   char* index_file_name = "index.html";
 
@@ -556,11 +467,11 @@ struct server_file* OpenServerFiles(char* server_paths, unsigned long int* numbe
       continue;
     }
 
-    unsigned long int url_path_length = strlen(server_files[i].url_path);
+    size_t url_path_length = strlen(server_files[i].url_path);
 
     // check if current URL path ends with forward slash
     if (server_files[i].url_path[url_path_length - 1] == '/') {
-      unsigned long int index_url_path_length;
+      size_t index_url_path_length;
       char* index_url_path;
 
       // URL path for index file will contatin current URL path plus index.html
@@ -577,7 +488,7 @@ struct server_file* OpenServerFiles(char* server_paths, unsigned long int* numbe
       file_path[0] = '.';
       file_path[file_path_length] = '\0';
 
-      unsigned long int j = 0;
+      size_t j = 0;
 
       // adding current URL path to the URL and file path of index file (index.html)
       for (; j < url_path_length; j++) {
@@ -589,7 +500,7 @@ struct server_file* OpenServerFiles(char* server_paths, unsigned long int* numbe
       }
 
       // adding "index.html" to the URL and file path of index file (index.html)
-      for (unsigned long int k = 0; k < strlen(index_file_name); k++) {
+      for (size_t k = 0; k < strlen(index_file_name); k++) {
         index_url_path[j + k] = index_file_name[k];
         file_path[j + 1 + k] = index_file_name[k];
       }
@@ -621,7 +532,7 @@ struct server_file* OpenServerFiles(char* server_paths, unsigned long int* numbe
 
     // check if current URL path contains index.html
     else if (strstr(server_files[i].url_path, index_file_name) != NULL) {
-      unsigned long int directory_url_path_length;
+      size_t directory_url_path_length;
       char* directory_url_path;
 
       // URL path for the same directory where index file is located
@@ -638,7 +549,7 @@ struct server_file* OpenServerFiles(char* server_paths, unsigned long int* numbe
       file_path[0] = '.';
       file_path[file_path_length] = '\0';
 
-      unsigned long int j = 0;
+      size_t j = 0;
 
       // adding current URL path to the URL and file path of index file (index.html)
       for (; j < directory_url_path_length; j++) {
@@ -689,7 +600,7 @@ struct server_file* OpenServerFiles(char* server_paths, unsigned long int* numbe
 
       // looping over file path sould be (j + 1), because the first character of
       // file path is always a dot ('.')
-      for (unsigned long int j = 0; j < url_path_length; j++) {
+      for (size_t j = 0; j < url_path_length; j++) {
         file_path[j + 1] = server_files[i].url_path[j];
       }
 
@@ -708,7 +619,7 @@ struct server_file* OpenServerFiles(char* server_paths, unsigned long int* numbe
   return server_files;
 }
 
-char* ReceiveMessage(int connection, unsigned long int* http_message_length) {
+char* ReceiveMessage(int connection, size_t *http_message_length) {
   const unsigned int BUFF_SIZE = 512; // max size of bytes of receive buffer
   const unsigned short int MAX_NUMBER_OF_ATTEMPTS = 100;
   char buff[BUFF_SIZE]; // for receive buffer
@@ -721,8 +632,8 @@ char* ReceiveMessage(int connection, unsigned long int* http_message_length) {
   char* http_header = NULL;
   char* http_body = NULL;
 
-  unsigned long int http_header_length = 0;
-  unsigned long int http_body_length = 0;
+  size_t http_header_length = 0;
+  size_t http_body_length = 0;
 
   ssize_t bytes_received = 0;
 
@@ -744,7 +655,7 @@ char* ReceiveMessage(int connection, unsigned long int* http_message_length) {
 
         // start collecting bytes of HTTP header section until substring, that signifies the end of this section occurs
         while (strstr(buff, END_OF_HTTP_HEADER) == NULL) {
-          http_header_length += (unsigned long int) bytes_received;
+          http_header_length += (size_t) bytes_received;
 
           temp = (char*) malloc(sizeof(char) * (http_header_length));
 
@@ -754,13 +665,13 @@ char* ReceiveMessage(int connection, unsigned long int* http_message_length) {
           }
 
           //// copy previously received data to new block of memory
-          for (unsigned long int i = 0; i < (http_header_length - (unsigned long int) bytes_received); i++) {
+          for (size_t i = 0; i < (http_header_length - (size_t) bytes_received); i++) {
             temp[i] = http_header[i];
           }
 
           //// add all characters from the receive buff to the new block of memory of received data
           for (ssize_t i = 0; i < bytes_received; i++) {
-            temp[http_header_length - (unsigned long int) bytes_received + i] = buff[i];
+            temp[http_header_length - (size_t) bytes_received + (size_t) i] = buff[i];
           }
 
           //// free old block of memory
@@ -774,7 +685,7 @@ char* ReceiveMessage(int connection, unsigned long int* http_message_length) {
         // get the position of the substring, that signifies the end of HTTP header section
         end_of_header = strstr(buff, END_OF_HTTP_HEADER);
 
-        unsigned long int last_header_length = 0; // length of last part of HTTP header section (part from buffer that comes before "\n\n")
+        size_t last_header_length = 0; // length of last part of HTTP header section (part from buffer that comes before "\n\n")
 
         // get the length of data that comes before the substring (that signifies the end of HTTP header section)
         while (&(buff[last_header_length]) != end_of_header) {
@@ -792,12 +703,12 @@ char* ReceiveMessage(int connection, unsigned long int* http_message_length) {
           }
 
           //// copy previously received data to new block of memory
-          for (unsigned long int i = 0; i < (http_header_length - last_header_length); i++) {
+          for (size_t i = 0; i < (http_header_length - last_header_length); i++) {
             temp[i] = http_header[i];
           }
 
           //// add all characters from the receive buff to the new block of memory of received data
-          for (unsigned long int i = 0; i < last_header_length; i++) {
+          for (size_t i = 0; i < last_header_length; i++) {
             temp[http_header_length - last_header_length + i] = buff[i];
           }
 
@@ -817,7 +728,7 @@ char* ReceiveMessage(int connection, unsigned long int* http_message_length) {
         }
 
         //// copy previously received data to new block of memory
-        for (unsigned long int i = 0; i < http_header_length; i++) {
+        for (size_t i = 0; i < http_header_length; i++) {
           temp[i] = http_header[i];
         }
 
@@ -878,7 +789,7 @@ char* ReceiveMessage(int connection, unsigned long int* http_message_length) {
             }
 
             // get the first data of HTTP body section
-            for (unsigned long int i = 0; i < http_body_length; i++) {
+            for (size_t i = 0; i < http_body_length; i++) {
               http_body[i] = buff[last_header_length + strlen(END_OF_HTTP_HEADER) + i];
             }
 
@@ -901,13 +812,13 @@ char* ReceiveMessage(int connection, unsigned long int* http_message_length) {
             }
 
             //// copy previously received data to new block of memory
-            for (unsigned long int i = 0; i < (http_body_length - (unsigned long int) bytes_received); i++) {
+            for (size_t i = 0; i < (http_body_length - (size_t) bytes_received); i++) {
               temp[i] = http_body[i];
             }
 
             //// add all characters from the receive buff to the new block of memory of received data
             for (ssize_t i = 0; i < bytes_received; i++) {
-              temp[http_body_length - (unsigned long int) bytes_received + i] = buff[i];
+              temp[http_body_length - (size_t) bytes_received + (size_t) i] = buff[i];
             }
 
             //// free old block of memory
@@ -929,7 +840,7 @@ char* ReceiveMessage(int connection, unsigned long int* http_message_length) {
         }
 
         //// copy previously received data to new block of memory
-        for (unsigned long int i = 0; i < http_body_length; i++) {
+        for (size_t i = 0; i < http_body_length; i++) {
           temp[i] = http_body[i];
         }
 
@@ -955,16 +866,16 @@ char* ReceiveMessage(int connection, unsigned long int* http_message_length) {
         }
 
         // copy all data from collected HTTP header section
-        for (unsigned long int i = 0; i < http_header_length; i++) {
+        for (size_t i = 0; i < http_header_length; i++) {
           http_message[i] = http_header[i];
         }
 
-        for (unsigned long int i = 0; i < strlen(END_OF_HTTP_HEADER); i++) {
+        for (size_t i = 0; i < strlen(END_OF_HTTP_HEADER); i++) {
          http_message[i + http_header_length] = END_OF_HTTP_HEADER[i];
         }
 
         // copy all data from collected HTTP body section
-        for (unsigned long int i = 0; i < http_body_length; i++) {
+        for (size_t i = 0; i < http_body_length; i++) {
           http_message[i + http_header_length + strlen(END_OF_HTTP_HEADER)] = http_body[i];
         }
 
@@ -980,6 +891,94 @@ char* ReceiveMessage(int connection, unsigned long int* http_message_length) {
     else { // make another attempt if previous one was unsuccessfull
       bytes_received = recv(connection, buff, BUFF_SIZE, 0);
       number_of_attempts += 1;
+    }
+  }
+
+  return http_message;
+}
+
+char* FormResponse(char* request_content, size_t request_length, struct server_file* server_files, unsigned long int number_of_files) {
+  char* http_message = NULL;
+  char* http_header = NULL;
+  char* http_body = NULL;
+
+  size_t http_message_length;
+  size_t http_header_length;
+  size_t http_body_length;
+
+  if (strstr(request_content, "GET") != NULL) {
+    char** search_result;
+    unsigned long int number_of_results;
+
+    char* url_path;
+
+    search_result = SearchAfter("GET ", request_content, " HTTP/1.1\n", &number_of_results);
+
+    if (search_result == NULL) {
+      return NULL;
+    }
+
+    if (number_of_results != 1) {
+      for (unsigned long int i = 0; i < number_of_results; i++) {
+        free(search_result[i]);
+      }
+
+      free(search_result);
+      return NULL;
+    }
+
+    url_path = search_result[0];
+    free(search_result);
+
+    unsigned long int i = 0;
+
+    for (; i < number_of_files; i++) {
+      if (strstr(server_files[i].url_path, url_path) != NULL) {
+        // return requested file with code 200
+        http_header = "HTTP/1.1 200 OK";
+        http_body = server_files[i].file_content;
+
+        free(url_path);
+        url_path = NULL;
+
+        break;
+      }
+    }
+
+    // if requested file was not in the server files
+    if (url_path != NULL) {
+      // return 404 error (file not found)
+      http_header = "HTTP/1.1 404 Not Found";
+      http_body = "<!DOCTYPE html>\n<html>\n<head>\n</head>\n<body>\n<h1>\n404 Not Found\n</h1>\n</body>\n</html>";
+
+      free(url_path);
+      url_path = NULL;
+    }
+
+    http_header_length = strlen(http_header);
+    http_body_length = strlen(http_body);
+
+    // printf("http_header_length: %lu\n", http_header_length);
+    // printf("http_body_length: %lu\n", http_body_length);
+
+    http_message_length = http_header_length + strlen("\n\n") + http_body_length;
+
+    // printf("http_message_length: %lu\n", http_message_length);
+
+    http_message = (char*) malloc(sizeof(char) * (http_message_length + 1));
+    http_message[http_message_length] = '\0';
+
+    size_t j = 0;
+    for (; j < http_header_length; j++) {
+      http_message[j] = http_header[j];
+    }
+
+    for (; (j - http_header_length) < 2; j++) { // (j - http_header_length) < 2, because strlen("\n\n") results in 2
+      http_message[j] = '\n';
+    }
+
+    for (; (j - http_header_length - strlen("\n\n")) < http_message_length; j++) {
+      http_message[j] = server_files[i].file_content[j - http_header_length - strlen("\n\n")];
     }
   }
 
