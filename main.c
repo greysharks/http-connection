@@ -75,7 +75,7 @@ int main(int argc, char* argv[]) {
       //   exit(EXIT_FAILURE);
       // }
 
-      // read a file containing all url paths available in this server (in form of list)
+      // read a file, containing all url paths available in this server (in form of list)
       server_paths = ReadFile("paths.txt", &server_paths_fsize);
 
       if (server_paths == NULL) {
@@ -84,6 +84,7 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
       }
 
+      // open server files, using the contents of file, that contains server (available) paths
       server_files = OpenServerFiles(server_paths, &number_of_resources);
 
       if (server_files == NULL) {
@@ -155,10 +156,9 @@ int main(int argc, char* argv[]) {
             continue;
           }
 
-          free(clients_request);
-
           send(conns[i], response, (size_t) strlen(response), 0);
 
+          free(clients_request);
           free(response);
 
           shutdown(conns[i], SHUT_WR);
