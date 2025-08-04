@@ -5,6 +5,8 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <fcntl.h>
+#include <sys/epoll.h>
 
 struct server_file {
   char* file_content;
@@ -44,8 +46,6 @@ int main(int argc, char* argv[]) {
     // if program is used as server
     if (strcmp(argv[1], "-s") == 0) {
       const unsigned short int MAX_CONNECTIONS = 10;
-      int conns[MAX_CONNECTIONS]; // for connections
-      unsigned short int N = 0; // N is number of connections
       // long int response_fsize; // fsize is file size
       long int server_paths_fsize;
 
@@ -61,19 +61,9 @@ int main(int argc, char* argv[]) {
       unsigned long int clients_request_length;
       unsigned long int number_of_resources;
 
-      // mark unexisting connections as -1
-      for (unsigned short int i = 0; i < MAX_CONNECTIONS; i++) {
-        conns[i] = -1;
-      }
+      struct epoll_event ev, events[MAX_CONNECTIONS];
 
-      // read response file
-      // = ReadFile("response.txt", &response_fsize);
-
-      // if (message == NULL) {
-      //   close(sock);
-      //   perror("ReadFile()");
-      //   exit(EXIT_FAILURE);
-      // }
+      int epoll_fd, conn;
 
       // read a file, containing all url paths available in this server (in form of list)
       server_paths = ReadFile("paths.txt", &server_paths_fsize);
@@ -109,67 +99,117 @@ int main(int argc, char* argv[]) {
 
       printf("server is listening on port %hu\n", PORT);
 
-      while (1) {
-        // add new connections to the array that holds all connections (as they occur)
-        if (N < MAX_CONNECTIONS) {
-          int conn; // for connection
-          conn = accept(sock, (struct sockaddr*) &addr, &addr_len);
+      // create epoll instance
+      epoll_fd = epoll_create1(0);
 
-          if (conn >= 0) {
-            conns[N] = conn;
-            N += 1;
-          }
+      if (epoll_fd == -1) {
+        close(sock);
+        perror("epoll_create1()");
+        exit(EXIT_FAILURE);
+      }
+
+      // add listening server's socket to epoll interest list
+      ev.events = EPOLLIN;
+      ev.data.fd = sock;
+
+      if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, sock, &ev) < 0) {
+        close(sock);
+        perror("epoll_ctl()");
+        exit(EXIT_FAILURE);
+      }
+
+      while (1) {
+        // number of returned file descriptors
+        int n_fds = epoll_wait(epoll_fd, events, MAX_CONNECTIONS, -1);
+
+        if (n_fds < 0) {
+          close(sock);
+          perror("epoll_wait()");
+          exit(EXIT_FAILURE);
         }
 
         // go through all connections (skipping unexisting ones)
-        for (unsigned short int i = 0; i < MAX_CONNECTIONS; i++) {
-          if (conns[i] == -1) {
-            continue;
-          }
+        for (int i = 0; i < n_fds; i++) {
+          if (events[i].data.fd == sock) {
+            // add new connections (as they occur)
+            conn = accept(sock, (struct sockaddr*) &addr, &addr_len);
 
-          puts("client's request:\n");
+            if (conn == -1) {
+              perror("accept()");
+              continue;
+            }
 
-          // receive request from client
-          clients_request = ReceiveMessage(conns[i], &clients_request_length);
+            // set connection socket in non-blocking mode
+            int flags = fcntl(conn, F_GETFL, 0);
 
-          // check if any error occured while trying to receive request from client
-          if (clients_request == NULL) {
-            close(conns[i]);
-            conns[i] = -1;
-            N -= 1;
-            continue;
-          }
+            if (flags < 0) {
+              close(conn);
+              perror("fcntl()");
+              continue;
+            }
 
-          // display request message in console
-          for (unsigned long int j = 0; j < clients_request_length; j++) {
-            putchar(clients_request[j]);
-          }
+            fcntl(conn, F_SETFL, flags | O_NONBLOCK);
 
-          response = FormResponse(clients_request, clients_request_length, server_files, number_of_resources);
+            // add connection socket to epoll interest list
+            ev.events = EPOLLIN | EPOLLET;
+            ev.data.fd = conn;
 
-          // check if any error occurred while forming server's response
-          if (response == NULL) {
+            if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, conn, &ev) < 0) {
+              close(conn);
+              perror("epoll_ctl()");
+              continue;
+            }
+          } else {
+            puts("client's request:\n");
+
+            // receive request from client
+            clients_request = ReceiveMessage(conn, &clients_request_length);
+
+            // check if any error occured while trying to receive request from client
+            if (clients_request == NULL) {
+              close(conn);
+              perror("ReceiveMessage()");
+              continue;
+            }
+
+            // display request message in console
+            for (size_t j = 0; j < clients_request_length; j++) {
+              putchar(clients_request[j]);
+            }
+
+            response = FormResponse(clients_request, clients_request_length, server_files, number_of_resources);
+
+            // check if any error occurred while forming server's response
+            if (response == NULL) {
+              free(clients_request);
+              close(conn);
+              perror("FormResponse()");
+              continue;
+            }
+
+            if (send(conn, response, strlen(response), 0) < 0) {
+              free(clients_request);
+              free(response);
+              close(conn);
+              perror("send()");
+              continue;
+            }
+
             free(clients_request);
-            close(conns[i]);
-            conns[i] = -1;
-            N -= 1;
-            continue;
-          }
+            free(response);
 
-          send(conns[i], response, (size_t) strlen(response), 0);
+            if (shutdown(conn, SHUT_WR) < 0) {
+              close(conn);
+              perror("shutdown()");
+              continue;
+            }
 
-          free(clients_request);
-          free(response);
+            close(conn);
 
-          shutdown(conns[i], SHUT_WR);
-
-          // if current connection is valid, then close it after sending server's message
-          // (because in this implementation server sends only one message
-          // and doesn't receive any messages from the client)
-          if (conns[i] != -1) {
-            close(conns[i]);
-            conns[i] = -1;
-            N -= 1;
+            if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, conn, &ev) < 0) {
+              perror("epoll_ctl()");
+              continue;
+            }
           }
         }
       }
@@ -217,7 +257,7 @@ int main(int argc, char* argv[]) {
 
       if (shutdown(sock, SHUT_WR) < 0) {
         close(sock);
-        perror("send()");
+        perror("shutdown()");
         exit(EXIT_FAILURE);
       }
 
