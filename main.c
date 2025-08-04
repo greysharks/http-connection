@@ -187,6 +187,7 @@ int main(int argc, char* argv[]) {
               continue;
             }
 
+            // check if any error occurred while sending server's response
             if (send(conn, response, strlen(response), 0) < 0) {
               free(clients_request);
               free(response);
@@ -195,6 +196,7 @@ int main(int argc, char* argv[]) {
               continue;
             }
 
+            // close the connection
             free(clients_request);
             free(response);
 
@@ -204,12 +206,12 @@ int main(int argc, char* argv[]) {
               continue;
             }
 
-            close(conn);
-
             if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, conn, &ev) < 0) {
               perror("epoll_ctl()");
               continue;
             }
+
+            close(conn);
           }
         }
       }
@@ -1009,15 +1011,20 @@ char* FormResponse(char* request_content, size_t request_length, struct server_f
     http_message[http_message_length] = '\0';
 
     size_t j = 0;
-    for (; j < http_header_length; j++) {
+    size_t offset = 0;
+    for (; (j - offset) < http_header_length; j++) {
       http_message[j] = http_header[j];
     }
 
-    for (; (j - http_header_length) < 2; j++) { // (j - http_header_length) < 2, because strlen("\n\n") results in 2
+    offset = http_header_length;
+
+    for (; (j - offset) < strlen("\n\n"); j++) { // (j - http_header_length) < 2, because strlen("\n\n") results in 2
       http_message[j] = '\n';
     }
 
-    for (; (j - http_header_length - strlen("\n\n")) < http_message_length; j++) {
+    offset += strlen("\n\n");
+
+    for (; (j - offset) < http_body_length; j++) {
       http_message[j] = server_files[i].file_content[j - http_header_length - strlen("\n\n")];
     }
   }
