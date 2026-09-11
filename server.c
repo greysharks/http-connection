@@ -36,7 +36,7 @@ int RunServer(struct sockaddr_in *socket_address, int socket) {
   server_paths = ReadFile("paths.txt", &server_paths_fsize);
 
   if (server_paths == NULL) {
-    return -1;
+    return ERRORS_READ_FILE;
   }
 
   // open server files, using the contents of file, that contains server
@@ -44,18 +44,17 @@ int RunServer(struct sockaddr_in *socket_address, int socket) {
   server_files = OpenServerFiles(server_paths, &number_of_resources);
 
   if (server_files == NULL) {
-    return -2;
+    return ERRORS_OPEN_SERVER_FILES;
   }
 
   // bind server socket with server's IP address, port number and address family
-  if (bind(socket, (struct sockaddr *)socket_address,
-           sizeof((*socket_address))) < 0) {
-    return -3;
+  if (bind(socket, (struct sockaddr *)socket_address, sizeof((*socket_address))) < 0) {
+    return ERRORS_SERVER_BIND;
   }
 
   // make the server listen to new connections until they reach MAX_CONNECTIONS
   if (listen(socket, MAX_CONNECTIONS) < 0) {
-    return -4;
+    return ERRORS_SERVER_LISTEN;
   }
 
   printf("server is listening on port %hu\n", PORT);
@@ -64,7 +63,7 @@ int RunServer(struct sockaddr_in *socket_address, int socket) {
   epoll_fd = epoll_create1(0);
 
   if (epoll_fd == -1) {
-    return -5;
+    return ERRORS_EPOLL_CREATE;
   }
 
   // add listening server's socket to epoll interest list
@@ -72,7 +71,7 @@ int RunServer(struct sockaddr_in *socket_address, int socket) {
   ev.data.fd = socket;
 
   if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, socket, &ev) < 0) {
-    return -6;
+    return ERRORS_EPOLL_CTL;
   }
 
   while (1) {
@@ -80,7 +79,7 @@ int RunServer(struct sockaddr_in *socket_address, int socket) {
     int n_fds = epoll_wait(epoll_fd, events, MAX_CONNECTIONS, -1);
 
     if (n_fds < 0) {
-      return -7;
+      return ERRORS_EPOLL_WAIT;
     }
 
     // go through all connections (skipping unexisting ones)
@@ -133,8 +132,7 @@ int RunServer(struct sockaddr_in *socket_address, int socket) {
           putchar(clients_request[j]);
         }
 
-        response = FormResponse(clients_request, clients_request_length,
-                                server_files, number_of_resources);
+        response = FormResponse(clients_request, clients_request_length, server_files, number_of_resources);
 
         // check if any error occurred while forming server's response
         if (response == NULL) {

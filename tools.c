@@ -171,35 +171,31 @@ char **SearchAfter(char *substring, char *string, char *separator,
 }
 
 void HandleRuntimeErrors(int error, int socket) {
-  if (error == -1) {
+  if (error < 0) {
     close(socket);
-    perror("ReadFile()");
+    if (error == ERRORS_READ_FILE) {
+      perror("ReadFile()");
+    } else if (error == ERRORS_OPEN_SERVER_FILES) {
+      perror("OpenServerFiles()");
+    } else if (error == ERRORS_SERVER_BIND) {
+      perror("bind()");
+    } else if (error == ERRORS_SERVER_LISTEN) {
+      perror("listen()");
+    } else if (error == ERRORS_EPOLL_CREATE) {
+      perror("epoll_create1()");
+    } else if (error == ERRORS_EPOLL_CTL) {
+      perror("epoll_ctl()");
+    } else if (error == ERRORS_EPOLL_WAIT) {
+      perror("epoll_wait()");
+    } else if (error == ERRORS_CLIENT_CONNECT) {
+      perror("connect()");
+    } else if (error == ERRORS_SOCKET_SEND) {
+      perror("send()");
+    } else if (error == ERRORS_SOCKET_SHUTDOWN) {
+      perror("shutdown()");
+    } else if (error == ERRORS_SOCKET_RECV) {
+      perror("recv()");
+    }
     exit(EXIT_FAILURE);
-  } else if (error == -2) {
-    close(socket);
-    perror("OpenServerFiles()");
-    exit(EXIT_FAILURE);
-  } else if (error == -3) {
-    close(socket);
-    perror("bind()");
-    exit(EXIT_FAILURE);
-  } else if (error == -4) {
-    close(socket);
-    perror("listen()");
-    exit(EXIT_FAILURE);
-  } else if (error == -5) {
-    close(socket);
-    perror("epoll_create1()");
-    exit(EXIT_FAILURE);
-  } else if (error == -6) {
-    close(socket);
-    perror("epoll_ctl()");
-    exit(EXIT_FAILURE);
-  } else if (error == -7) {
-    close(socket);
-    perror("epoll_wait()");
-    exit(EXIT_FAILURE);
-  } else if (error == -8) {
-
   }
 }

@@ -39,68 +39,8 @@ int main(int argc, char *argv[]) {
 
     // if program is used as client
     else if (strcmp(argv[1], "-c") == 0) {
-      const unsigned int BUFF_SIZE = 512; // max size of bytes of receive buffer
-      char buff[BUFF_SIZE];               // for receive buffer
-
-      ssize_t bytes_received = 0;
-
-      long int request_fsize;
-
-      // read request file
-      char *message = ReadFile("request.txt", &request_fsize);
-
-      if (message == NULL) {
-        close(sock);
-        perror("ReadFile()");
-        exit(EXIT_FAILURE);
-      }
-
-      // connect to the server using its port number and IP
-      if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        close(sock);
-        perror("connect()");
-        exit(EXIT_FAILURE);
-      }
-
-      // send client's request to server
-      if (send(sock, message, (size_t)(request_fsize + 1), 0) < 0) {
-        close(sock);
-        perror("send()");
-        exit(EXIT_FAILURE);
-      }
-
-      if (shutdown(sock, SHUT_WR) < 0) {
-        close(sock);
-        perror("shutdown()");
-        exit(EXIT_FAILURE);
-      }
-
-      puts("server's response:\n");
-
-      // try to recevie the first portion of bytes of the server's response
-      bytes_received = recv(sock, buff, BUFF_SIZE, 0);
-
-      // keep printing all bytes of data that client recevies from the server
-      while (bytes_received > 0) {
-        for (unsigned short int i = 0; i < bytes_received; i++) {
-          putchar(buff[i]);
-        }
-
-        bytes_received = recv(sock, buff, BUFF_SIZE, 0);
-      }
-
-      // check if any error occured while trying to receive data from server
-      // (in other case the client successfully received all the data)
-      if (bytes_received < 0) {
-        close(sock);
-        perror("recv()");
-        exit(EXIT_FAILURE);
-      }
-
-      free(message);
-      shutdown(sock, SHUT_RD);
-      close(sock);
-      exit(EXIT_SUCCESS);
+			int result = RunClient(&addr, sock);
+			HandleRuntimeErrors(result, sock);
     }
 
     // otherwise wrong arguments were passed to program
@@ -112,6 +52,7 @@ int main(int argc, char *argv[]) {
   }
 
   close(sock);
-
+	exit(EXIT_SUCCESS);
+	
   return 0;
 }
