@@ -1,9 +1,21 @@
-CC=g++
+CC = gcc
 
-all: main
+CFLAGS = -Wall -g
 
-main: main.c
-	$(CC) -g -o run main.c
+TARGET = run
 
+SRCS = $(wildcard *.c)
+
+OBJS = $(SRCS:.c=.o)
+
+all: $(TARGET)
+
+$(TARGET): $(OBJS)
+	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS)
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+.PHONY: clean
 clean:
-	rm run
+	rm -f $(OBJS) $(TARGET)
