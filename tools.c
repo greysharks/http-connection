@@ -11,9 +11,21 @@ char *ReadFile(char *file_name, long int *file_size) {
   // open file
   file = fopen(file_name, "r");
 
+  if (file == NULL) {
+    return NULL;
+  }
+
   // get file size
-  fseek(file, 0, SEEK_END);
+  if (fseek(file, 0, SEEK_END) != 0) {
+    return NULL;
+  }
+
   *file_size = ftell(file);
+
+  if (*file_size == -1L) {
+    return NULL;
+  }
+
   rewind(file);
 
   // read file content
@@ -21,11 +33,14 @@ char *ReadFile(char *file_name, long int *file_size) {
 
   // malloc(...) can return NULL instead of allocating memory
   if (file_content == NULL) {
+    fclose(file);
     return NULL;
   }
 
   // if file was not read successfully
   if (fread(file_content, 1, *file_size, file) != *file_size) {
+    free(file_content);
+    fclose(file);
     return NULL;
   }
 
