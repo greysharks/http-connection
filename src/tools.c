@@ -1,5 +1,6 @@
 #include "tools.h"
 
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -52,17 +53,12 @@ char *ReadFile(char *file_name, long int *file_size) {
   return file_content;
 }
 
-char **SearchAfter(char *substring, char *string, char *separator,
-                   unsigned long int *number_of_results) {
-  char **results = NULL;
-
+size_t CountNumberOfSubstrings(char *substring, char *string) {
   size_t string_length = strlen(string);
   size_t substring_length = strlen(substring);
-  size_t separator_length = strlen(separator);
 
-  *number_of_results = 0;
+  size_t counter = 0;
 
-  // count number of substrings placed in the string
   for (size_t i = 0; i < string_length; i++) {
     if (string[i] == substring[0]) {
       size_t j = 0;
@@ -91,18 +87,81 @@ char **SearchAfter(char *substring, char *string, char *separator,
         // loop iteration -- the index gets positioned right after the the end
         // of substring
         i += j - 1;
-        *number_of_results += 1;
+        counter += 1;
       }
     }
   }
 
-  if (number_of_results == 0) {
+  return counter;
+}
+
+size_t* GetStartIndexes(char *substring, char *string, size_t number_of_results) {
+  size_t string_length = strlen(string);
+  size_t substring_length = strlen(substring);
+
+  size_t* start_indexes = (size_t*) malloc(sizeof(size_t) * (number_of_results));
+
+  if (start_indexes == NULL) {
     return NULL;
   }
 
-  results = (char **)malloc((sizeof(char *)) * (*number_of_results));
+  size_t counter = 0;
 
-  unsigned int count = 0;
+  for (size_t i = 0; i < string_length; i++) {
+    if (string[i] == substring[0]) {
+      size_t j = 0;
+
+      // check if the substring is in the string
+      while (string[i + j] == substring[j]) {
+        j += 1;
+
+        // as at some moment substring[j] will be '\0' (considering that
+        // substring_length < string_length) and it will signify that the
+        // content of substring was found in the string and the loop would be
+        // finished, unless string[i + j] would be the end of the string as well
+        // and so it would also be '\0', so the next iteration of the loop would
+        // happen and the program would try to access the values outside the
+        // given arrays (resulting in error or unpredictable behaviour)
+        if (string[i + j] == '\0') {
+          break;
+        }
+      }
+
+      // that means that every characters of substring was in the string (in
+      // same sequence)
+      if (j == substring_length) {
+        // (j - 1) moves index to the position of the final character of the
+        // string, so when the index gets incremented (i++) in the end of for
+        // loop iteration -- the index gets positioned right after the the end
+        // of substring
+        start_indexes[counter] = i;
+        i += j - 1;
+        counter += 1;
+      }
+    }
+  }
+
+  return start_indexes;
+}
+
+char** ExtractResults(char *substring, char *string, char *separator, size_t number_of_results) {
+  char **results = (char **)malloc((sizeof(char *)) * (number_of_results));
+
+  if (results == NULL) {
+    return NULL;
+  }
+
+  size_t string_length = strlen(string);
+  size_t substring_length = strlen(substring);
+  size_t separator_length = strlen(separator);
+
+  size_t count = 0;
+
+  size_t* results_start_indexes = GetStartIndexes(substring, string, number_of_results);
+
+  if (results_start_indexes == NULL) {
+    return NULL;
+  }
 
   // get all substrings after given substring but before the given separator
   for (size_t i = 0; i < string_length; i++) {
@@ -113,7 +172,7 @@ char **SearchAfter(char *substring, char *string, char *separator,
       while (string[i + j] == substring[j]) {
         j += 1;
 
-        // explanations are above in this function
+        // explanations are in function CountNumberOfSubstrings
         if (string[i + j] == '\0') {
           break;
         }
@@ -157,6 +216,11 @@ char **SearchAfter(char *substring, char *string, char *separator,
         }
 
         char *result_found = (char *)malloc(sizeof(char) * (length + 1));
+
+        if (result_found == NULL) {
+          return NULL;
+        }
+
         result_found[length] = '\0';
 
         j = 0;
@@ -183,6 +247,17 @@ char **SearchAfter(char *substring, char *string, char *separator,
   }
 
   return results;
+}
+
+char **SearchAfter(char *substring, char *string, char *separator, size_t *number_of_results) {
+  // count number of substrings placed in the string
+  *number_of_results = CountNumberOfSubstrings(substring, string);
+
+  if (number_of_results == 0) {
+    return NULL;
+  }
+
+  return ExtractResults(substring, string, separator, *number_of_results);
 }
 
 void HandleRuntimeErrors(int error, int socket) {

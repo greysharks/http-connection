@@ -1,21 +1,40 @@
+include sources.mk
+
+TARGET = main
+
 CC = gcc
-
-CFLAGS = -Wall -g
-
-TARGET = run
-
-SRCS = $(wildcard *.c)
+CPPFLAGS = $(INCLUDES)
+CFLAGS = -Wall -Werror -g
+LDFLAGS = -Wl,-Map=$(TARGET).map
 
 OBJS = $(SRCS:.c=.o)
+DEPS = $(SRCS:.c=.d)
 
-all: $(TARGET)
-
-$(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS)
+%.i: %.c
+	$(CC) $(CPPFLAGS) -E $< -o $@
 
 %.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -c $< -o $@
+
+%.asm: %.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -S $< -o $@
+
+.PHONY: all
+all: build
+	size $(TARGET).out
+
+.PHONY: build
+build: $(TARGET).out
+
+.PHONY: compile-all
+compile-all: $(OBJS)
+
+$(TARGET).out: $(OBJS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $^
+
+$(TARGET).asm: build
+	objdump -d $(TARGET).out > $(TARGET).asm
 
 .PHONY: clean
 clean:
-	rm -f $(OBJS) $(TARGET)
+	rm -f $(SRCS_DIR)/*.o $(SRCS_DIR)/*.i $(SRCS_DIR)/*.asm $(SRCS_DIR)/*.d *.out *.map *.asm

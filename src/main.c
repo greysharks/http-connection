@@ -4,6 +4,7 @@
 #include "tools.h"
 
 #include <netinet/in.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,6 +13,18 @@
 #include <unistd.h>
 
 int main(int argc, char *argv[]) {
+  size_t number;
+  char* str_example = "example 1, example 2, example 3";
+  char* substr_example = "example";
+  char** example_substrings = SearchAfter(substr_example, str_example, " ", &number);
+
+  for (int i = 0; i < number; i++) {
+    printf("%d%s\n", i + 1, example_substrings[i]);
+    free(example_substrings[i]);
+  }
+
+  free (example_substrings);
+
   // structure that holds server's IP, port number and address family
   // (it can be used either to create a server with these values or
   // either to connect to the server with these values)
