@@ -4,8 +4,9 @@ TARGET = main
 
 CC = gcc
 CPPFLAGS = $(INCLUDES)
-CFLAGS = -Wall -Werror -g
+CFLAGS = -Wall -Werror -g -MMD -MP
 LDFLAGS = -Wl,-Map=$(TARGET).map
+LDLIBS = -lm
 
 OBJS = $(SRCS:.c=.o)
 DEPS = $(SRCS:.c=.d)
@@ -14,10 +15,10 @@ DEPS = $(SRCS:.c=.d)
 	$(CC) $(CPPFLAGS) -E $< -o $@
 
 %.o: %.c
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -c $< -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
 %.asm: %.c
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -S $< -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) -S $< -o $@
 
 .PHONY: all
 all: build
@@ -30,7 +31,7 @@ build: $(TARGET).out
 compile-all: $(OBJS)
 
 $(TARGET).out: $(OBJS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $^
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 $(TARGET).asm: build
 	objdump -d $(TARGET).out > $(TARGET).asm
