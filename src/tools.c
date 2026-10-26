@@ -6,6 +6,14 @@
 #include <string.h>
 #include <unistd.h>
 
+#ifndef true 
+#define true 1
+#endif
+
+#ifndef false
+#define false 0
+#endif
+
 char *ReadFile(char *file_name, long int *file_size) {
   FILE *file;
 
@@ -59,92 +67,38 @@ size_t CountNumberOfSubstrings(char *substring, char *string) {
 
   size_t counter = 0;
 
-  for (size_t i = 0; i < string_length; i++) {
-    if (string[i] == substring[0]) {
-      size_t j = 0;
+  if (string_length < substring_length) return counter; // return 0
 
-      // check if the substring is in the string
-      while (string[i + j] == substring[j]) {
-        j += 1;
+  for (size_t string_index = 0; string_index < string_length; string_index++) {
 
-        // as at some moment substring[j] will be '\0' (considering that
-        // substring_length < string_length) and it will signify that the
-        // content of substring was found in the string and the loop would be
-        // finished, unless string[i + j] would be the end of the string as well
-        // and so it would also be '\0', so the next iteration of the loop would
-        // happen and the program would try to access the values outside the
-        // given arrays (resulting in error or unpredictable behaviour)
-        if (string[i + j] == '\0') {
+    // possibile occurence
+    if (string[string_index] == substring[0]) {
+      size_t substring_index = 0;
+
+      // loop over string characters, until they matches with substring characters
+      while (string[string_index + substring_index] == substring[substring_index]) {
+        substring_index += 1;
+
+        // considering that substring_length < string_length, at some point
+        // the substring will end (if all characters match) and it will signify that the
+        // content of substring was found in the string, so the loop should be
+        // finished
+
+        if (substring_index == substring_length) {
+          counter += 1;
           break;
         }
       }
 
-      // that means that every characters of substring was in the string (in
-      // same sequence)
-      if (j == substring_length) {
-        // (j - 1) moves index to the position of the final character of the
-        // string, so when the index gets incremented (i++) in the end of for
-        // loop iteration -- the index gets positioned right after the the end
-        // of substring
-        i += j - 1;
-        counter += 1;
-      }
+      // skip unsuccessful search (or successful!)
+      string_index += substring_index - 1; // (substring_index - 1), because there's string_index++ in the end of the loop cycle anyway
     }
   }
 
   return counter;
 }
 
-size_t* GetStartIndexes(char *substring, char *string, size_t number_of_results) {
-  size_t string_length = strlen(string);
-  size_t substring_length = strlen(substring);
-
-  size_t* start_indexes = (size_t*) malloc(sizeof(size_t) * (number_of_results));
-
-  if (start_indexes == NULL) {
-    return NULL;
-  }
-
-  size_t counter = 0;
-
-  for (size_t i = 0; i < string_length; i++) {
-    if (string[i] == substring[0]) {
-      size_t j = 0;
-
-      // check if the substring is in the string
-      while (string[i + j] == substring[j]) {
-        j += 1;
-
-        // as at some moment substring[j] will be '\0' (considering that
-        // substring_length < string_length) and it will signify that the
-        // content of substring was found in the string and the loop would be
-        // finished, unless string[i + j] would be the end of the string as well
-        // and so it would also be '\0', so the next iteration of the loop would
-        // happen and the program would try to access the values outside the
-        // given arrays (resulting in error or unpredictable behaviour)
-        if (string[i + j] == '\0') {
-          break;
-        }
-      }
-
-      // that means that every characters of substring was in the string (in
-      // same sequence)
-      if (j == substring_length) {
-        // (j - 1) moves index to the position of the final character of the
-        // string, so when the index gets incremented (i++) in the end of for
-        // loop iteration -- the index gets positioned right after the the end
-        // of substring
-        start_indexes[counter] = i;
-        i += j - 1;
-        counter += 1;
-      }
-    }
-  }
-
-  return start_indexes;
-}
-
-char** ExtractResults(char *substring, char *string, char *separator, size_t number_of_results) {
+char** ExtractResults(char *string, char *begin, char *end, size_t number_of_results) {
   char **results = (char **)malloc((sizeof(char *)) * (number_of_results));
 
   if (results == NULL) {
@@ -152,112 +106,118 @@ char** ExtractResults(char *substring, char *string, char *separator, size_t num
   }
 
   size_t string_length = strlen(string);
-  size_t substring_length = strlen(substring);
-  size_t separator_length = strlen(separator);
+  size_t begin_length = strlen(begin);
+  size_t end_length = strlen(end);
 
-  size_t count = 0;
-
-  size_t* results_start_indexes = GetStartIndexes(substring, string, number_of_results);
-
-  if (results_start_indexes == NULL) {
+  if (string_length < begin_length || string_length < end_length) {
+    free(results);
     return NULL;
   }
 
+  if (end_length == 0) {
+    // if there was an empty string instead of custom 'end' separator, 
+    // then we'll use 'begin' separator as 'end' separator
+    end = begin;
+    // recalculate length
+    end_length = strlen(end);
+  }
+
+  // index for each result in results array
+  size_t results_index = 0;
+
   // get all substrings after given substring but before the given separator
-  for (size_t i = 0; i < string_length; i++) {
-    // find again each place where substring is in the string
-    if (string[i] == substring[0]) {
-      size_t j = 0;
+  for (size_t string_index = 0; string_index < string_length; string_index++) {
+    // potential occurence of 'begin' separator in string
+    if (string[string_index] == begin[0]) {
+      size_t substring_index = 0;
 
-      while (string[i + j] == substring[j]) {
-        j += 1;
+      // search stops if characters stop to match
+      while (string[string_index + substring_index] == begin[substring_index]) {
+        substring_index += 1;
 
-        // explanations are in function CountNumberOfSubstrings
-        if (string[i + j] == '\0') {
-          break;
-        }
-      }
+        // found full occurence of 'begin' separator in string
+        if (substring_index == begin_length) {
+          // move to the part of the string that starts right after the occurence
+          string_index += substring_index;
 
-      // and if every characters of substring was in the string (in same
-      // sequence)
-      if (j == substring_length) {
-        // move to the part of the string that starts right after the given
-        // substring
-        i += j;
+          size_t length = 0;
+          int finish_search_cycle = false;
 
-        size_t length = 0;
+          // get the length of searched substring
+          while (string[string_index + length] != '\0') {
+            // start search for occurence of 'end' separator in string
+            if (string[string_index + length] == end[0]) {
+              substring_index = 0;
 
-        j = 0;
+              // search stops if characters stop matching
+              while (string[string_index + length + substring_index] == end[substring_index]) {
+                substring_index += 1;
 
-        // get the length of searched substring
-        while (string[i + length] != '\0') {
-          if (string[i + length] == separator[0]) {
-            size_t k = 0;
-
-            while (string[i + length + k] == separator[k]) {
-              k += 1;
-
-              // similar to cases before (explanations in function above)
-              if (string[i + length + k] == '\0') {
-                break;
+                // this should be self explaining
+                if (substring_index == end_length) {
+                  finish_search_cycle = true;
+                  break;
+                }
               }
             }
 
-            // that means that the algorithm reached the separator for the
-            // string search (if this block will be removed, then the length
-            // would be incremented until the algorithm reaches the end of the
-            // string)
-            if (k == separator_length) {
+            // exit outer while loop if full occurence of 'end' separator was found in the string
+            if (finish_search_cycle == true) {
+              finish_search_cycle = false;
               break;
             }
+
+            // increment length otherwise
+            length += 1;
           }
 
-          length += 1;
+          char *result_found = (char *)malloc(sizeof(char) * (length + 1));
+
+          if (result_found == NULL) {
+            free(results);
+            return NULL;
+          }
+
+          result_found[length] = '\0';
+          substring_index = 0;
+
+          // copy substring found to result_found variable
+          while (substring_index != length) {
+            result_found[substring_index] = string[string_index + substring_index];
+            substring_index += 1;
+          }
+
+          results[results_index] = result_found;
+          string_index += length - 1;// (length - 1), because there's string_index++ in the end of the loop cycle anyway
+          results_index += 1;
+          break;
         }
-
-        char *result_found = (char *)malloc(sizeof(char) * (length + 1));
-
-        if (result_found == NULL) {
-          return NULL;
-        }
-
-        result_found[length] = '\0';
-
-        j = 0;
-
-        while (j != length) {
-          result_found[j] = string[i];
-
-          j += 1;
-          i += 1;
-        }
-
-        results[count] = result_found;
-
-        // this expression lets index skip the found result of search as well as
-        // skip the separator's substring to continue the search for the next
-        // occurrence of the given substring in the string (decrement for the
-        // same reason as in the loop for counting number of substrings in the
-        // string)
-        i += (length - 1) + (separator_length - 1);
-
-        count += 1;
       }
     }
+  }
+
+  // exit function while freeing memory if the number of results added by this function
+  // is different from number_of_results provided as argument to this function
+  if (results_index != number_of_results) {
+    for (size_t i = 0; i < results_index; i++) {
+      free(results[i]);
+    }
+    free(results);
+    return NULL;
   }
 
   return results;
 }
 
-char **SearchAfter(char *substring, char *string, char *separator, size_t *number_of_results) {
+char **SearchAfter(char *string, char *begin, char *end, size_t *number_of_results) {
   // count number of substrings placed in the string
-  *number_of_results = CountNumberOfSubstrings(substring, string);
+  *number_of_results = CountNumberOfSubstrings(begin, string);
 
-  if (number_of_results == 0) {
+  if (*number_of_results == 0) {
     return NULL;
   }
 
-  return ExtractResults(substring, string, separator, *number_of_results);
+  return ExtractResults(string, begin, end, *number_of_results);
 }
 
 void HandleRuntimeErrors(int error, int socket) {

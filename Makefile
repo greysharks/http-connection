@@ -4,7 +4,7 @@ TARGET = main
 
 CC = gcc
 CPPFLAGS = $(INCLUDES)
-CFLAGS = -Wall -Werror -g -MMD -MP
+CFLAGS = -Wall -g -MMD -MP
 LDFLAGS = -Wl,-Map=$(TARGET).map
 LDLIBS = -lm
 

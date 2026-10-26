@@ -14,12 +14,13 @@
 
 int main(int argc, char *argv[]) {
   size_t number;
-  char* str_example = "example 1, example 2, example 3";
-  char* substr_example = "example";
-  char** example_substrings = SearchAfter(substr_example, str_example, " ", &number);
+  char* str_example = "example abc, example defg, example h";
+  char* begin_example = "example";
+  char* end_example = ", ";
+  char** example_substrings = SearchAfter(str_example, begin_example, end_example, &number);
 
   for (int i = 0; i < number; i++) {
-    printf("%d%s\n", i + 1, example_substrings[i]);
+    printf("%d %s\n", i + 1, example_substrings[i]);
     free(example_substrings[i]);
   }
 
