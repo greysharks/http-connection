@@ -39,3 +39,6 @@ $(TARGET).asm: build
 .PHONY: clean
 clean:
 	rm -f $(SRCS_DIR)/*.o $(SRCS_DIR)/*.i $(SRCS_DIR)/*.asm $(SRCS_DIR)/*.d *.out *.map *.asm
+
+.PHONY: rebuild
+rebuild: clean build

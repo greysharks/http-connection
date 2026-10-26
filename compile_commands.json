@@ -1,0 +1,53 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-I",
+      "include/common/",
+      "-Wall",
+      "-Werror",
+      "-g",
+      "-c",
+      "-o",
+      "src/main.o",
+      "src/main.c"
+    ],
+    "directory": "/home/vboxuser/Documents/c/http-connection",
+    "file": "/home/vboxuser/Documents/c/http-connection/src/main.c",
+    "output": "/home/vboxuser/Documents/c/http-connection/src/main.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-I",
+      "include/common/",
+      "-Wall",
+      "-Werror",
+      "-g",
+      "-c",
+      "-o",
+      "src/client.o",
+      "src/client.c"
+    ],
+    "directory": "/home/vboxuser/Documents/c/http-connection",
+    "file": "/home/vboxuser/Documents/c/http-connection/src/client.c",
+    "output": "/home/vboxuser/Documents/c/http-connection/src/client.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-I",
+      "include/common/",
+      "-Wall",
+      "-Werror",
+      "-g",
+      "-c",
+      "-o",
+      "src/server.o",
+      "src/server.c"
+    ],
+    "directory": "/home/vboxuser/Documents/c/http-connection",
+    "file": "/home/vboxuser/Documents/c/http-connection/src/server.c",
+    "output": "/home/vboxuser/Documents/c/http-connection/src/server.o"
+  }
+]
